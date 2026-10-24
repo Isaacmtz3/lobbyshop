@@ -1,6 +1,12 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Barber, Client, QueueEntry, Shop } from '../types'
+import {
+  DAY_KEYS,
+  DAY_LABELS,
+  defaultShopHours,
+  parseShopHours,
+} from '../lib/hours'
+import type { Barber, Client, QueueEntry, Shop, ShopHours } from '../types'
 
 type Tab = 'overview' | 'queue' | 'clients' | 'barbers' | 'settings'
 
@@ -544,22 +550,49 @@ function SettingsTab({ shop, onShopUpdated }: { shop: Shop; onShopUpdated: (shop
   const [accentColor, setAccentColor] = useState(shop.accent_color)
   const [lat, setLat] = useState(shop.lat)
   const [lng, setLng] = useState(shop.lng)
+  const [hours, setHours] = useState<ShopHours>(() => parseShopHours(shop.hours) ?? defaultShopHours())
+  const [hoursEdited, setHoursEdited] = useState(false)
   const [locating, setLocating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
+  function updateDay(key: string, patch: Partial<{ closed: boolean; open: string; close: string }>) {
+    setHours((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }))
+    setHoursEdited(true)
+  }
+
   async function save() {
+    for (const key of DAY_KEYS) {
+      const d = hours[key]
+      if (!d.closed && d.open >= d.close) {
+        setMessage(`Opening time must be before closing time for ${DAY_LABELS[key as keyof typeof DAY_LABELS]}.`)
+        return
+      }
+    }
     setSaving(true)
     setMessage(null)
     const { data, error } = await supabase
       .from('shops')
-      .update({ name, city, address, phone, accent_color: accentColor, lat, lng })
+      .update({
+        name,
+        city,
+        address,
+        phone,
+        accent_color: accentColor,
+        lat,
+        lng,
+        ...(hoursEdited ? { hours } : {}),
+      })
       .eq('id', shop.id)
       .select()
       .single()
     setSaving(false)
-    if (!error && data) {
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    if (data) {
       onShopUpdated(data as Shop)
       setMessage('Saved.')
     }
@@ -705,6 +738,50 @@ function SettingsTab({ shop, onShopUpdated }: { shop: Shop; onShopUpdated: (shop
             onChange={(e) => setAccentColor(e.target.value)}
             className="h-10 w-20 rounded border border-line bg-panel2"
           />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Opening hours</label>
+          <p className="mb-2 text-xs text-mute">
+            Shown on your shop page. While you're closed, guests and clients can't check in — they see your
+            next opening time instead.
+          </p>
+          <div className="space-y-2">
+            {DAY_KEYS.map((key) => {
+              const d = hours[key]
+              return (
+                <div key={key} className="flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-sm text-bone">{DAY_LABELS[key]}</span>
+                  <label className="flex shrink-0 items-center gap-1.5 text-xs text-mute">
+                    <input
+                      type="checkbox"
+                      checked={d.closed}
+                      onChange={(e) => updateDay(key, { closed: e.target.checked })}
+                    />
+                    Closed
+                  </label>
+                  <input
+                    type="time"
+                    value={d.open}
+                    disabled={d.closed}
+                    onChange={(e) => updateDay(key, { open: e.target.value })}
+                    className="rounded border border-line bg-panel2 px-2 py-1.5 text-sm text-bone disabled:opacity-40"
+                  />
+                  <span className="text-xs text-mute">to</span>
+                  <input
+                    type="time"
+                    value={d.close}
+                    disabled={d.closed}
+                    onChange={(e) => updateDay(key, { close: e.target.value })}
+                    className="rounded border border-line bg-panel2 px-2 py-1.5 text-sm text-bone disabled:opacity-40"
+                  />
+                </div>
+              )
+            })}
+          </div>
+          <p className="mt-2 text-xs text-mute">
+            Hours are stored per day in local time. If saving fails with a "column does not exist" error, the
+            shops.hours column hasn't been added yet — see the migration file in the repo (draft, not applied).
+          </p>
         </div>
         {message && <p className="text-sm text-mute">{message}</p>}
         <button

@@ -23,8 +23,21 @@ export interface Shop {
   is_active: boolean
   lat: number | null
   lng: number | null
+  // Per-day opening hours (jsonb). NULL = hours not set: the app treats the
+  // shop as open and does not block check-in. See src/lib/hours.ts.
+  hours: ShopHours | null
   created_at: string
 }
+
+// One day's opening hours. Times are local "HH:MM" (24-hour) strings;
+// close must be after open on the same day (no overnight hours).
+export interface DayHours {
+  closed: boolean
+  open: string
+  close: string
+}
+
+export type ShopHours = Record<string, DayHours>
 
 export interface ShopQueueStats {
   shop_id: string

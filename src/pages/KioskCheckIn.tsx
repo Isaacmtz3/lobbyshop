@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { formatNextOpening, getOpenState, parseShopHours } from '../lib/hours'
 import { ETA_OPTIONS, type Barber, type Shop, type ShopQueueBoardEntry } from '../types'
 
 const DEFAULT_SERVICES = ['Haircut', 'Haircut + Beard', 'Beard trim', 'Kids cut']
@@ -75,6 +76,10 @@ export function KioskCheckIn() {
 
   async function handleCheckIn() {
     if (!shop || !clientName.trim()) return
+    if (getOpenState(parseShopHours(shop.hours), new Date()).state === 'closed') {
+      setError('This shop is closed right now — check-in opens again at its next opening time.')
+      return
+    }
     setSubmitting(true)
     setError(null)
     const { error: insertError } = await supabase.from('queue').insert({
@@ -117,6 +122,10 @@ export function KioskCheckIn() {
     )
   }
 
+  const openState = getOpenState(parseShopHours(shop.hours), new Date())
+  const isClosed = openState.state === 'closed'
+  const nextOpening = openState.state === 'closed' ? openState.nextOpening : null
+
   return (
     <div className="flex min-h-screen flex-col items-center bg-void px-5 py-10">
       <div className="mb-8 flex flex-col items-center">
@@ -131,6 +140,15 @@ export function KioskCheckIn() {
         <p className="text-sm text-mute">Check in below to join the queue</p>
       </div>
 
+      {isClosed ? (
+        <div className="w-full max-w-md rounded-md border border-line bg-panel p-8 text-center">
+          <p className="font-display text-xl font-bold text-bone">Closed right now</p>
+          <p className="mt-2 text-sm text-mute">
+            Check-in opens {formatNextOpening(nextOpening, new Date())}.
+          </p>
+        </div>
+      ) : (
+        <>
       <div className="w-full max-w-md">
         {success ? (
           <div className="rounded-md border p-8 text-center" style={{ borderColor: shop.accent_color }}>
@@ -242,6 +260,8 @@ export function KioskCheckIn() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   )
 }
