@@ -165,8 +165,18 @@ export function ShopDetail() {
         <div>
           <h1 className="font-display text-2xl font-bold text-bone">{shop.name}</h1>
           {shop.address && <p className="text-sm text-mute">{shop.address}</p>}
+          {shop.city && <p className="text-sm text-mute">{shop.city}</p>}
+          {shop.phone && (
+            <p className="text-sm">
+              <a href={`tel:${shop.phone}`} className="text-brandBright hover:underline">
+                {shop.phone}
+              </a>
+            </p>
+          )}
         </div>
       </div>
+
+      {shop.description && <p className="mb-8 text-sm leading-relaxed text-mute">{shop.description}</p>}
 
       <div className="mb-8 grid grid-cols-3 gap-3">
         <div className="rounded-md border border-line bg-panel p-4 text-center">
@@ -218,6 +228,10 @@ export function ShopDetail() {
             <p className="text-sm text-mute">
               <Link to="/login" className="text-brandBright hover:underline">
                 Sign in
+              </Link>{' '}
+              or{' '}
+              <Link to="/signup" className="text-brandBright hover:underline">
+                sign up
               </Link>{' '}
               to check in and track your spot live.
             </p>

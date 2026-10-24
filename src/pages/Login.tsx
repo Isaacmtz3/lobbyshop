@@ -58,6 +58,11 @@ export function Login() {
         </button>
       </form>
       <p className="mt-4 text-sm text-mute">
+        <Link to="/forgot-password" className="text-brandBright hover:underline">
+          Forgot password?
+        </Link>
+      </p>
+      <p className="mt-4 text-sm text-mute">
         No account?{' '}
         <Link to="/signup" className="text-brandBright hover:underline">
           Sign up

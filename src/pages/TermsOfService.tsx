@@ -35,10 +35,6 @@ export function TermsOfService() {
               <strong className="text-bone">Shop owners</strong> list and run a shop's queue, including adding
               staff and barbers, and managing clients checked in at their shop.
             </li>
-            <li>
-              <strong className="text-bone">Agents</strong> may check clients into a shop's queue on their behalf
-              (for example, at the shop's front desk).
-            </li>
           </ul>
           <p className="mt-2">
             You're responsible for keeping your login credentials secure and for all activity under your account.

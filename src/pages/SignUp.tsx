@@ -9,7 +9,7 @@ const ROLE_OPTIONS: { value: ProfileRole; label: string; blurb: string }[] = [
 ]
 
 export function SignUp() {
-  const { signUp } = useAuth()
+  const { signUp, resendConfirmation } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const defaultRole = (location.state as { defaultRole?: ProfileRole } | null)?.defaultRole
@@ -22,6 +22,22 @@ export function SignUp() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [confirmSent, setConfirmSent] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [resent, setResent] = useState(false)
+  const [resendError, setResendError] = useState<string | null>(null)
+
+  async function handleResend() {
+    setResending(true)
+    setResendError(null)
+    try {
+      await resendConfirmation(email)
+      setResent(true)
+    } catch (err) {
+      setResendError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setResending(false)
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -49,6 +65,17 @@ export function SignUp() {
         <p className="text-sm text-mute">
           We sent a confirmation link to {email}. Click it, then come back and sign in.
         </p>
+        <p className="mt-4 text-sm text-mute">
+          Didn't get it?{' '}
+          <button
+            onClick={handleResend}
+            disabled={resending || resent}
+            className="text-brandBright hover:underline disabled:opacity-50"
+          >
+            {resending ? 'Sending…' : resent ? 'Confirmation email resent' : 'Resend confirmation email'}
+          </button>
+        </p>
+        {resendError && <p className="mt-2 text-sm text-crimsonBright">{resendError}</p>}
       </div>
     )
   }

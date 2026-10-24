@@ -10,7 +10,7 @@ export function PrivacyPolicy() {
         <Section title="1. Introduction">
           <p>
             This Privacy Policy explains what information Lobby collects, how we use it, and the choices you
-            have. It applies to everyone who uses Lobby — clients, shop owners, and agents.
+            have. It applies to everyone who uses Lobby — clients and shop owners.
           </p>
         </Section>
 

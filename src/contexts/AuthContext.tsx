@@ -18,6 +18,8 @@ interface AuthContextValue {
   ) => Promise<{ needsEmailConfirmation: boolean }>
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  sendPasswordReset: (email: string) => Promise<void>
+  resendConfirmation: (email: string) => Promise<void>
   refreshProfile: () => Promise<void>
 }
 
@@ -75,6 +77,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
   }
 
+  async function sendPasswordReset(email: string) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    if (error) throw error
+  }
+
+  async function resendConfirmation(email: string) {
+    const { error } = await supabase.auth.resend({ type: 'signup', email })
+    if (error) throw error
+  }
+
   async function refreshProfile() {
     if (session) await loadProfile(session.user.id)
   }
@@ -90,6 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signUp,
         signIn,
         signOut,
+        sendPasswordReset,
+        resendConfirmation,
         refreshProfile,
       }}
     >

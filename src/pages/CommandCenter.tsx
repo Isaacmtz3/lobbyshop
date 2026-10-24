@@ -136,7 +136,6 @@ export function CommandCenter() {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <StatCard label="Clients" value={roleCounts.client} />
           <StatCard label="Shop owners" value={roleCounts.shop_owner} />
-          <StatCard label="Agents" value={roleCounts.agent} />
           <StatCard label="New (7 days)" value={signupsLast7Days} accent="text-volt" />
         </div>
       </section>

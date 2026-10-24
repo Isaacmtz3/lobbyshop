@@ -1,14 +1,14 @@
 import { Link, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { NavBar } from './components/NavBar'
 import { useAuth } from './contexts/AuthContext'
-import { AgentExplore } from './pages/AgentExplore'
-import { AgentShopCheckIn } from './pages/AgentShopCheckIn'
 import { CommandCenter } from './pages/CommandCenter'
+import { ForgotPassword } from './pages/ForgotPassword'
 import { KioskCheckIn } from './pages/KioskCheckIn'
 import { Landing } from './pages/Landing'
 import { Login } from './pages/Login'
 import { OwnerOnboarding } from './pages/OwnerOnboarding'
 import { PrivacyPolicy } from './pages/PrivacyPolicy'
+import { ResetPassword } from './pages/ResetPassword'
 import { ShopDetail } from './pages/ShopDetail'
 import { ShopDirectory } from './pages/ShopDirectory'
 import { ShopDisplay } from './pages/ShopDisplay'
@@ -47,7 +47,6 @@ function RootRoute() {
   }
   if (user) {
     if (profile?.role === 'shop_owner') return <Navigate to="/owner" replace />
-    if (profile?.role === 'agent' || profile?.role === 'staff') return <Navigate to="/agent" replace />
     return <Navigate to="/browse" replace />
   }
   return <Landing />
@@ -85,6 +84,8 @@ function App() {
         <Route path="/shop/:slug" element={<ShopDetail />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route
@@ -95,8 +96,6 @@ function App() {
             </RequireRole>
           }
         />
-        <Route path="/agent" element={<AgentExplore />} />
-        <Route path="/agent/shop/:slug" element={<AgentShopCheckIn />} />
         <Route
           path="/command-center"
           element={

@@ -126,6 +126,7 @@ export function OwnerDashboard({
         )}
         {tab === 'queue' && (
           <QueueTab
+            shopId={shop.id}
             waiting={waiting}
             called={called}
             inChair={inChair}
@@ -136,6 +137,7 @@ export function OwnerDashboard({
             onNoShow={markNoShow}
             onComplete={completeEntry}
             onRemove={removeEntry}
+            onQueueChanged={loadQueue}
           />
         )}
         {tab === 'clients' && <ClientsTab clients={clients} />}
@@ -196,6 +198,10 @@ function OverviewTab({
 
 const CALLED_GRACE_MINUTES = 10
 
+// Same service list the client check-in forms use — there is no per-shop
+// services table yet, so the owner adds walk-ins from this shared list.
+const WALK_IN_SERVICES = ['Haircut', 'Haircut + Beard', 'Beard trim', 'Kids cut']
+
 function expectedArrival(entry: QueueEntry): string {
   if (entry.eta_minutes == null) return '—'
   const base = new Date(entry.checked_in_at).getTime() + entry.eta_minutes * 60_000
@@ -203,6 +209,7 @@ function expectedArrival(entry: QueueEntry): string {
 }
 
 function QueueTab({
+  shopId,
   waiting,
   called,
   inChair,
@@ -213,7 +220,9 @@ function QueueTab({
   onNoShow,
   onComplete,
   onRemove,
+  onQueueChanged,
 }: {
+  shopId: string
   waiting: QueueEntry[]
   called: QueueEntry[]
   inChair: QueueEntry[]
@@ -224,6 +233,7 @@ function QueueTab({
   onNoShow: (id: string) => void
   onComplete: (id: string) => void
   onRemove: (id: string) => void
+  onQueueChanged: () => void
 }) {
   const barberName = (id: string | null) => barbers.find((b) => b.id === id)?.name ?? '—'
 
@@ -235,6 +245,38 @@ function QueueTab({
     return () => clearInterval(t)
   }, [])
 
+  const [walkInName, setWalkInName] = useState('')
+  const [walkInPhone, setWalkInPhone] = useState('')
+  const [walkInService, setWalkInService] = useState(WALK_IN_SERVICES[0])
+  const [walkInBarberId, setWalkInBarberId] = useState('')
+  const [walkInSaving, setWalkInSaving] = useState(false)
+  const [walkInError, setWalkInError] = useState<string | null>(null)
+
+  // A walk-in standing at the desk: same queue row the kiosk creates, but
+  // entered by the owner so a dead iPad never blocks the line.
+  async function handleAddWalkIn() {
+    if (!walkInName.trim()) return
+    setWalkInSaving(true)
+    setWalkInError(null)
+    const { error: insertError } = await supabase.from('queue').insert({
+      shop_id: shopId,
+      client_name: walkInName.trim(),
+      phone: walkInPhone.trim() || null,
+      service: walkInService,
+      barber_id: walkInBarberId || null,
+    })
+    setWalkInSaving(false)
+    if (insertError) {
+      setWalkInError(insertError.message)
+      return
+    }
+    setWalkInName('')
+    setWalkInPhone('')
+    setWalkInService(WALK_IN_SERVICES[0])
+    setWalkInBarberId('')
+    onQueueChanged()
+  }
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -245,6 +287,67 @@ function QueueTab({
           className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright disabled:opacity-40"
         >
           Call next client {waiting.length > 0 && `(${waiting.length} waiting)`}
+        </button>
+      </div>
+
+      <div className="mb-6 rounded-md border border-line bg-panel p-5">
+        <h2 className="mb-4 font-display text-sm uppercase tracking-wider text-mute">Add a walk-in</h2>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Client name</label>
+            <input
+              value={walkInName}
+              onChange={(e) => setWalkInName(e.target.value)}
+              placeholder="Walk-in client"
+              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Phone (optional)</label>
+            <input
+              type="tel"
+              value={walkInPhone}
+              onChange={(e) => setWalkInPhone(e.target.value)}
+              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Service</label>
+            <select
+              value={walkInService}
+              onChange={(e) => setWalkInService(e.target.value)}
+              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+            >
+              {WALK_IN_SERVICES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Barber (optional)</label>
+            <select
+              value={walkInBarberId}
+              onChange={(e) => setWalkInBarberId(e.target.value)}
+              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+            >
+              <option value="">No preference</option>
+              {barbers.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {walkInError && <p className="mt-3 text-sm text-crimsonBright">{walkInError}</p>}
+        <button
+          onClick={handleAddWalkIn}
+          disabled={walkInSaving || !walkInName.trim()}
+          className="mt-4 rounded bg-brand px-4 py-2.5 text-sm font-medium text-bone transition-colors hover:bg-brandBright disabled:opacity-40"
+        >
+          {walkInSaving ? 'Adding…' : 'Add to queue'}
         </button>
       </div>
 

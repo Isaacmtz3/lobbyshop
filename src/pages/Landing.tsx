@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { ProfileRole, Shop, ShopQueueStats } from '../types'
 
@@ -398,6 +398,16 @@ export function Landing() {
           </div>
         </div>
       </main>
+
+      <footer className="border-t border-slate-900/5 px-5 py-6 text-center text-sm text-slate-500">
+        <Link to="/terms" className="hover:text-slate-900 hover:underline">
+          Terms of Service
+        </Link>
+        <span className="mx-2">·</span>
+        <Link to="/privacy" className="hover:text-slate-900 hover:underline">
+          Privacy Policy
+        </Link>
+      </footer>
     </div>
   )
 }
