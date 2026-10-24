@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatNextOpening, getOpenState, parseShopHours } from '../lib/hours'
-import { ETA_OPTIONS, type Barber, type Shop, type ShopQueueBoardEntry } from '../types'
+import { fetchShopServices, toServiceOptions } from '../lib/services'
+import { ETA_OPTIONS, type Barber, type Shop, type ShopQueueBoardEntry, type ShopService } from '../types'
 
 const DEFAULT_SERVICES = ['Haircut', 'Haircut + Beard', 'Beard trim', 'Kids cut']
 
@@ -10,6 +11,7 @@ export function KioskCheckIn() {
   const { slug } = useParams<{ slug: string }>()
   const [shop, setShop] = useState<Shop | null>(null)
   const [barbers, setBarbers] = useState<Barber[]>([])
+  const [services, setServices] = useState<ShopService[]>([])
   const [waitingCounts, setWaitingCounts] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
 
@@ -48,6 +50,7 @@ export function KioskCheckIn() {
           .eq('active', true)
           .order('name')
         setBarbers((barberData as Barber[]) ?? [])
+        setServices(await fetchShopServices(shopData.id))
         await loadWaitingCounts(shopData.id)
       }
       setLoading(false)
@@ -73,6 +76,15 @@ export function KioskCheckIn() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shop?.id])
+
+  // When the live menu arrives, point the picker at a real service instead
+  // of the generic fallback default.
+  useEffect(() => {
+    if (services.length > 0 && !services.some((s) => s.name === service)) {
+      setService(services[0].name)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [services])
 
   async function handleCheckIn() {
     if (!shop || !clientName.trim()) return
@@ -102,7 +114,7 @@ export function KioskCheckIn() {
   function startOver() {
     setClientName('')
     setPhone('')
-    setService(DEFAULT_SERVICES[0])
+    setService(toServiceOptions(services, DEFAULT_SERVICES)[0]?.name ?? DEFAULT_SERVICES[0])
     setBarberId('')
     setEtaMinutes(ETA_OPTIONS[1])
     setSuccess(false)
@@ -125,6 +137,7 @@ export function KioskCheckIn() {
   const openState = getOpenState(parseShopHours(shop.hours), new Date())
   const isClosed = openState.state === 'closed'
   const nextOpening = openState.state === 'closed' ? openState.nextOpening : null
+  const serviceOptions = toServiceOptions(services, DEFAULT_SERVICES)
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-void px-5 py-10">
@@ -187,9 +200,9 @@ export function KioskCheckIn() {
                 onChange={(e) => setService(e.target.value)}
                 className="w-full rounded border border-line bg-panel2 px-3 py-3 text-base text-bone"
               >
-                {DEFAULT_SERVICES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
+                {serviceOptions.map((s) => (
+                  <option key={s.name} value={s.name}>
+                    {s.label}
                   </option>
                 ))}
               </select>

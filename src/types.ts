@@ -39,6 +39,17 @@ export interface DayHours {
 
 export type ShopHours = Record<string, DayHours>
 
+export interface ShopService {
+  id: string
+  shop_id: string
+  name: string
+  price_cents: number
+  duration_min: number | null
+  active: boolean
+  sort_order: number
+  created_at: string
+}
+
 export interface ShopQueueStats {
   shop_id: string
   waiting_count: number
@@ -64,6 +75,7 @@ export interface QueueEntry {
   shop_id: string
   client_name: string
   phone: string | null
+  email: string | null
   service: string
   barber_id: string | null
   status: QueueStatus

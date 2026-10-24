@@ -10,6 +10,7 @@ import {
   getOpenState,
   parseShopHours,
 } from '../lib/hours'
+import { fetchShopServices, formatPriceCents, toServiceOptions } from '../lib/services'
 import {
   ETA_OPTIONS,
   type Barber,
@@ -17,6 +18,7 @@ import {
   type Shop,
   type ShopQueueBoardEntry,
   type ShopQueueStats,
+  type ShopService,
 } from '../types'
 
 const DEFAULT_SERVICES = ['Haircut', 'Haircut + Beard', 'Beard trim', 'Kids cut']
@@ -29,6 +31,7 @@ export function ShopDetail() {
 
   const [shop, setShop] = useState<Shop | null>(null)
   const [barbers, setBarbers] = useState<Barber[]>([])
+  const [services, setServices] = useState<ShopService[]>([])
   const [stats, setStats] = useState<ShopQueueStats | null>(null)
   const [myPosition, setMyPosition] = useState<MyQueuePosition | null>(null)
   const [loading, setLoading] = useState(true)
@@ -44,6 +47,7 @@ export function ShopDetail() {
   // state only (a refresh loses it — guests can simply check in again).
   const [guestName, setGuestName] = useState('')
   const [guestPhone, setGuestPhone] = useState('')
+  const [guestEmail, setGuestEmail] = useState('')
   const [guestCheckingIn, setGuestCheckingIn] = useState(false)
   const [guestError, setGuestError] = useState<string | null>(null)
   const [guestNotice, setGuestNotice] = useState<string | null>(null)
@@ -103,13 +107,15 @@ export function ShopDetail() {
       }
       setShop(shopData as Shop)
 
-      const [{ data: barberData }] = await Promise.all([
+      const [{ data: barberData }, liveServices] = await Promise.all([
         supabase.from('barbers').select('*').eq('shop_id', shopData.id).eq('active', true).order('name'),
+        fetchShopServices(shopData.id),
         loadStats(shopData.id),
         loadMyPosition(shopData.id),
       ])
       if (!active) return
       setBarbers((barberData as Barber[]) ?? [])
+      setServices(liveServices)
       setLoading(false)
     }
     load()
@@ -134,9 +140,12 @@ export function ShopDetail() {
       )
       .subscribe()
     // Realtime only delivers this viewer's own queue rows, so other people moving through the line needs polling.
+    // Services ride along so a price/menu edit in the dashboard shows up on
+    // an already-open shop page without a refresh or redeploy.
     const poll = setInterval(() => {
       loadStats(shop.id)
       loadMyPosition(shop.id)
+      fetchShopServices(shop.id).then(setServices)
       if (guestEntryIdRef.current) loadGuestPosition(guestEntryIdRef.current)
     }, 15_000)
 
@@ -146,6 +155,15 @@ export function ShopDetail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shop?.id, user?.id])
+
+  // When the live menu arrives, point the picker at a real service instead
+  // of the generic fallback default.
+  useEffect(() => {
+    if (services.length > 0 && !services.some((s) => s.name === service)) {
+      setService(services[0].name)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [services])
 
   async function handleCheckIn() {
     if (!shop || !user) return
@@ -195,6 +213,7 @@ export function ShopDetail() {
         shop_id: shop.id,
         client_name: guestName.trim(),
         phone: guestPhone.trim(),
+        email: guestEmail.trim() || null,
         service,
         barber_id: barberId || null,
         eta_minutes: etaMinutes,
@@ -259,6 +278,9 @@ export function ShopDetail() {
   const isClosed = openState.state === 'closed'
   const nextOpening = openState.state === 'closed' ? openState.nextOpening : null
   const isCalled = myPosition?.status === 'called' || guestBoard?.status === 'called'
+
+  // Live menu from the database (generic fallback until the shop sets one).
+  const serviceOptions = toServiceOptions(services, DEFAULT_SERVICES)
 
   return (
     <div className="mx-auto max-w-3xl px-5 py-10">
@@ -333,6 +355,23 @@ export function ShopDetail() {
                 </p>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {services.length > 0 && (
+        <div className="mb-8 rounded-md border border-line bg-panel p-6">
+          <h2 className="mb-3 font-display text-sm uppercase tracking-wider text-mute">Services &amp; prices</h2>
+          <div className="divide-y divide-line">
+            {services.map((s) => (
+              <div key={s.id} className="flex items-baseline justify-between gap-3 py-2">
+                <span className="text-sm text-bone">{s.name}</span>
+                <span className="shrink-0 text-sm text-mute">
+                  {s.duration_min ? `${s.duration_min} min · ` : ''}
+                  <span className="font-medium text-bone">{formatPriceCents(s.price_cents)}</span>
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -431,15 +470,27 @@ export function ShopDetail() {
               </div>
 
               <div>
+                <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">
+                  Email (optional)
+                </label>
+                <input
+                  value={guestEmail}
+                  onChange={(e) => setGuestEmail(e.target.value)}
+                  className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+                />
+                <p className="mt-1 text-xs text-mute">So we can email you when you're called.</p>
+              </div>
+
+              <div>
                 <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Service</label>
                 <select
                   value={service}
                   onChange={(e) => setService(e.target.value)}
                   className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
                 >
-                  {DEFAULT_SERVICES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
+                  {serviceOptions.map((s) => (
+                    <option key={s.name} value={s.name}>
+                      {s.label}
                     </option>
                   ))}
                 </select>
@@ -519,9 +570,9 @@ export function ShopDetail() {
                   onChange={(e) => setService(e.target.value)}
                   className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
                 >
-                  {DEFAULT_SERVICES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
+                  {serviceOptions.map((s) => (
+                    <option key={s.name} value={s.name}>
+                      {s.label}
                     </option>
                   ))}
                 </select>

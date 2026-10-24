@@ -6,9 +6,10 @@ import {
   defaultShopHours,
   parseShopHours,
 } from '../lib/hours'
-import type { Barber, Client, QueueEntry, Shop, ShopHours } from '../types'
+import { fetchShopServices, toServiceOptions } from '../lib/services'
+import type { Barber, Client, QueueEntry, Shop, ShopHours, ShopService } from '../types'
 
-type Tab = 'overview' | 'queue' | 'clients' | 'barbers' | 'settings'
+type Tab = 'overview' | 'queue' | 'clients' | 'barbers' | 'services' | 'settings'
 
 export function OwnerDashboard({
   shop,
@@ -21,6 +22,7 @@ export function OwnerDashboard({
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [barbers, setBarbers] = useState<Barber[]>([])
+  const [services, setServices] = useState<ShopService[]>([])
   const [completedToday, setCompletedToday] = useState(0)
 
   async function loadQueue() {
@@ -43,6 +45,11 @@ export function OwnerDashboard({
     setBarbers((data as Barber[]) ?? [])
   }
 
+  // All services, including inactive ones, so the editor can reactivate them.
+  async function loadServices() {
+    setServices(await fetchShopServices(shop.id, false))
+  }
+
   async function loadStats() {
     const { data } = await supabase.from('shop_queue_stats').select('*').eq('shop_id', shop.id).maybeSingle()
     setCompletedToday(data?.completed_today ?? 0)
@@ -52,6 +59,7 @@ export function OwnerDashboard({
     loadQueue()
     loadClients()
     loadBarbers()
+    loadServices()
     loadStats()
 
     const channel = supabase
@@ -73,7 +81,21 @@ export function OwnerDashboard({
   const inChair = queue.filter((q) => q.status === 'in_chair')
 
   async function callEntry(id: string) {
-    await supabase.from('queue').update({ status: 'called', called_at: new Date().toISOString() }).eq('id', id)
+    const { data, error } = await supabase
+      .from('queue')
+      .update({ status: 'called', called_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id')
+      .single()
+    if (error || !data) return
+    // Second channel for "you're called": email. Best-effort on purpose —
+    // the in-app banner is what the client sees first, and a missing or
+    // not-yet-deployed email function must never break the call itself.
+    try {
+      await supabase.functions.invoke('send-called-email', { body: { queue_id: id } })
+    } catch {
+      // Email not configured yet — the banner still fires.
+    }
   }
   async function callNext() {
     const next = waiting[0]
@@ -103,6 +125,7 @@ export function OwnerDashboard({
               ['queue', 'Live queue'],
               ['clients', 'Clients'],
               ['barbers', 'Barbers'],
+              ['services', 'Services'],
               ['settings', 'Settings'],
             ] as [Tab, string][]
           ).map(([key, label]) => (
@@ -137,6 +160,7 @@ export function OwnerDashboard({
             called={called}
             inChair={inChair}
             barbers={barbers}
+            services={services}
             onCallNext={callNext}
             onCall={callEntry}
             onConfirmArrived={confirmArrived}
@@ -148,6 +172,7 @@ export function OwnerDashboard({
         )}
         {tab === 'clients' && <ClientsTab clients={clients} />}
         {tab === 'barbers' && <BarbersTab shopId={shop.id} barbers={barbers} onChange={loadBarbers} />}
+        {tab === 'services' && <ServicesTab shopId={shop.id} services={services} onChange={loadServices} />}
         {tab === 'settings' && <SettingsTab shop={shop} onShopUpdated={onShopUpdated} />}
       </main>
     </div>
@@ -204,8 +229,8 @@ function OverviewTab({
 
 const CALLED_GRACE_MINUTES = 10
 
-// Same service list the client check-in forms use — there is no per-shop
-// services table yet, so the owner adds walk-ins from this shared list.
+// Generic fallback when a shop hasn't set up its live menu yet. The walk-in
+// picker prefers the shop's own services (see QueueTab's walkInOptions).
 const WALK_IN_SERVICES = ['Haircut', 'Haircut + Beard', 'Beard trim', 'Kids cut']
 
 function expectedArrival(entry: QueueEntry): string {
@@ -220,6 +245,7 @@ function QueueTab({
   called,
   inChair,
   barbers,
+  services,
   onCallNext,
   onCall,
   onConfirmArrived,
@@ -233,6 +259,7 @@ function QueueTab({
   called: QueueEntry[]
   inChair: QueueEntry[]
   barbers: Barber[]
+  services: ShopService[]
   onCallNext: () => void
   onCall: (id: string) => void
   onConfirmArrived: (id: string) => void
@@ -258,6 +285,18 @@ function QueueTab({
   const [walkInSaving, setWalkInSaving] = useState(false)
   const [walkInError, setWalkInError] = useState<string | null>(null)
 
+  // Live menu from the shop's services table (generic fallback until set).
+  const walkInOptions = toServiceOptions(
+    services.filter((s) => s.active),
+    WALK_IN_SERVICES,
+  )
+  useEffect(() => {
+    if (walkInOptions.length > 0 && !walkInOptions.some((o) => o.name === walkInService)) {
+      setWalkInService(walkInOptions[0].name)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [services])
+
   // A walk-in standing at the desk: same queue row the kiosk creates, but
   // entered by the owner so a dead iPad never blocks the line.
   async function handleAddWalkIn() {
@@ -278,7 +317,7 @@ function QueueTab({
     }
     setWalkInName('')
     setWalkInPhone('')
-    setWalkInService(WALK_IN_SERVICES[0])
+    setWalkInService(walkInOptions[0]?.name ?? WALK_IN_SERVICES[0])
     setWalkInBarberId('')
     onQueueChanged()
   }
@@ -324,9 +363,9 @@ function QueueTab({
               onChange={(e) => setWalkInService(e.target.value)}
               className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
             >
-              {WALK_IN_SERVICES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
+              {walkInOptions.map((s) => (
+                <option key={s.name} value={s.name}>
+                  {s.label}
                 </option>
               ))}
             </select>
@@ -537,6 +576,192 @@ function BarbersTab({ shopId, barbers, onChange }: { shopId: string; barbers: Ba
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function ServicesTab({
+  shopId,
+  services,
+  onChange,
+}: {
+  shopId: string
+  services: ShopService[]
+  onChange: () => void
+}) {
+  const [name, setName] = useState('')
+  const [price, setPrice] = useState('')
+  const [duration, setDuration] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // Per-row draft edits (price dollars + duration minutes), saved on demand.
+  const [drafts, setDrafts] = useState<Record<string, { price: string; duration: string }>>({})
+
+  function draftFor(s: ShopService) {
+    return (
+      drafts[s.id] ?? {
+        price: s.price_cents % 100 === 0 ? String(s.price_cents / 100) : (s.price_cents / 100).toFixed(2),
+        duration: s.duration_min != null ? String(s.duration_min) : '',
+      }
+    )
+  }
+
+  async function addService() {
+    const priceCents = Math.round(parseFloat(price) * 100)
+    if (!name.trim() || Number.isNaN(priceCents) || priceCents < 0) {
+      setError('Enter a service name and a price of $0 or more.')
+      return
+    }
+    const durationMin = duration.trim() === '' ? null : parseInt(duration, 10)
+    if (durationMin !== null && (Number.isNaN(durationMin) || durationMin <= 0)) {
+      setError('Duration must be a positive number of minutes, or blank.')
+      return
+    }
+    setAdding(true)
+    setError(null)
+    const { error: insertError } = await supabase.from('shop_services').insert({
+      shop_id: shopId,
+      name: name.trim(),
+      price_cents: priceCents,
+      duration_min: durationMin,
+      sort_order: services.length,
+    })
+    setAdding(false)
+    if (insertError) {
+      setError(insertError.message)
+      return
+    }
+    setName('')
+    setPrice('')
+    setDuration('')
+    onChange()
+  }
+
+  async function saveService(s: ShopService) {
+    const d = draftFor(s)
+    const priceCents = Math.round(parseFloat(d.price) * 100)
+    if (Number.isNaN(priceCents) || priceCents < 0) {
+      setError('Price must be $0 or more.')
+      return
+    }
+    const durationMin = d.duration.trim() === '' ? null : parseInt(d.duration, 10)
+    if (durationMin !== null && (Number.isNaN(durationMin) || durationMin <= 0)) {
+      setError('Duration must be a positive number of minutes, or blank.')
+      return
+    }
+    setError(null)
+    const { error: updateError } = await supabase
+      .from('shop_services')
+      .update({ price_cents: priceCents, duration_min: durationMin })
+      .eq('id', s.id)
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+    setDrafts((prev) => {
+      const next = { ...prev }
+      delete next[s.id]
+      return next
+    })
+    onChange()
+  }
+
+  async function toggleActive(s: ShopService) {
+    await supabase.from('shop_services').update({ active: !s.active }).eq('id', s.id)
+    onChange()
+  }
+
+  async function removeService(id: string) {
+    await supabase.from('shop_services').delete().eq('id', id)
+    onChange()
+  }
+
+  return (
+    <div>
+      <h1 className="mb-6 font-display text-2xl font-semibold text-bone">Services &amp; prices</h1>
+      <p className="mb-4 text-sm text-mute">
+        This is your shop's live menu — it shows on your shop page and in every check-in picker. Changes take
+        effect right away, no redeploy needed.
+      </p>
+      <div className="mb-4 grid gap-2 sm:grid-cols-[1fr_120px_140px_auto]">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Service name"
+          className="rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+        />
+        <input
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          placeholder="Price ($)"
+          inputMode="decimal"
+          className="rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+        />
+        <input
+          value={duration}
+          onChange={(e) => setDuration(e.target.value)}
+          placeholder="Minutes (optional)"
+          inputMode="numeric"
+          className="rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+        />
+        <button
+          onClick={addService}
+          disabled={adding}
+          className="rounded bg-brand px-4 py-2.5 text-sm font-medium text-bone transition-colors hover:bg-brandBright disabled:opacity-40"
+        >
+          Add
+        </button>
+      </div>
+      {error && <p className="mb-4 text-sm text-crimsonBright">{error}</p>}
+      <div className="divide-y divide-line rounded-md border border-line bg-panel">
+        {services.length === 0 && (
+          <p className="px-5 py-8 text-center text-mute">No services yet — add your first one above.</p>
+        )}
+        {services.map((s) => {
+          const d = draftFor(s)
+          const dirty =
+            Math.round(parseFloat(d.price) * 100) !== s.price_cents ||
+            (d.duration.trim() === '' ? null : parseInt(d.duration, 10)) !== s.duration_min
+          return (
+            <div key={s.id} className="flex flex-wrap items-center gap-2 px-5 py-3">
+              <span className={`min-w-0 flex-1 text-sm ${s.active ? 'text-bone' : 'text-mute line-through'}`}>
+                {s.name}
+              </span>
+              <span className="text-sm text-mute">$</span>
+              <input
+                value={d.price}
+                onChange={(e) =>
+                  setDrafts((prev) => ({ ...prev, [s.id]: { ...draftFor(s), price: e.target.value } }))
+                }
+                inputMode="decimal"
+                aria-label={`Price for ${s.name}`}
+                className="w-20 rounded border border-line bg-panel2 px-2 py-1.5 text-sm text-bone"
+              />
+              <input
+                value={d.duration}
+                onChange={(e) =>
+                  setDrafts((prev) => ({ ...prev, [s.id]: { ...draftFor(s), duration: e.target.value } }))
+                }
+                inputMode="numeric"
+                placeholder="min"
+                aria-label={`Duration for ${s.name}`}
+                className="w-16 rounded border border-line bg-panel2 px-2 py-1.5 text-sm text-bone"
+              />
+              {dirty && (
+                <button onClick={() => saveService(s)} className="text-sm text-brandBright hover:underline">
+                  Save
+                </button>
+              )}
+              <button onClick={() => toggleActive(s)} className="text-xs text-brandBright hover:underline">
+                {s.active ? 'Deactivate' : 'Activate'}
+              </button>
+              <button onClick={() => removeService(s.id)} className="text-xs text-crimsonBright hover:underline">
+                Remove
+              </button>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
