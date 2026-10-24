@@ -64,7 +64,10 @@ export function KioskCheckIn() {
         () => loadWaitingCounts(shop.id),
       )
       .subscribe()
+    // Realtime only delivers rows the viewer can read, and a logged-out kiosk can't read raw queue rows.
+    const poll = setInterval(() => loadWaitingCounts(shop.id), 15_000)
     return () => {
+      clearInterval(poll)
       supabase.removeChannel(channel)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
