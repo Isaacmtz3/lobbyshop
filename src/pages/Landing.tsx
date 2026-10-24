@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import type { ProfileRole, Shop, ShopQueueStats } from '../types'
+import type { Shop, ShopQueueStats } from '../types'
 
 const ICON_PROPS = {
   fill: 'none',
@@ -178,8 +178,8 @@ function BarberPole({ className = 'h-16 w-7' }: { className?: string }) {
 export function Landing() {
   const navigate = useNavigate()
 
-  function goToSignUp(defaultRole: ProfileRole) {
-    navigate('/signup', { state: { defaultRole } })
+  function goToSignUp() {
+    navigate('/signup')
   }
 
   /** Featured-shop card data, loaded live from Supabase — the card used to
@@ -253,7 +253,7 @@ export function Landing() {
               Sign in
             </button>
             <button
-              onClick={() => goToSignUp('shop_owner')}
+              onClick={() => goToSignUp()}
               className="rounded-full bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-[0_1px_2px_rgba(0,0,0,0.05),0_8px_20px_-6px_rgba(47,111,237,0.5)] transition-all hover:-translate-y-px hover:bg-brandBright hover:shadow-[0_1px_2px_rgba(0,0,0,0.05),0_12px_24px_-6px_rgba(47,111,237,0.6)] active:translate-y-0"
             >
               For barbershops
@@ -290,7 +290,7 @@ export function Landing() {
                 Browse shops
               </button>
               <button
-                onClick={() => goToSignUp('shop_owner')}
+                onClick={() => goToSignUp()}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-brand bg-white px-6 py-4 text-base font-semibold text-brand shadow-sm transition-all hover:-translate-y-0.5 hover:bg-brand/5 hover:shadow-md active:translate-y-0"
               >
                 <StoreIcon />

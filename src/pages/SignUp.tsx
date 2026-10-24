@@ -1,23 +1,14 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import type { ProfileRole } from '../types'
-
-const ROLE_OPTIONS: { value: ProfileRole; label: string; blurb: string }[] = [
-  { value: 'client', label: 'Client', blurb: 'Browse shops, check in, see live wait times' },
-  { value: 'shop_owner', label: 'Shop owner', blurb: 'List your shop and run its queue board' },
-]
 
 export function SignUp() {
   const { signUp, resendConfirmation } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
-  const defaultRole = (location.state as { defaultRole?: ProfileRole } | null)?.defaultRole
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState<ProfileRole>(defaultRole === 'shop_owner' ? 'shop_owner' : 'client')
   const [agreedToTerms, setAgreedToTerms] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -45,11 +36,11 @@ export function SignUp() {
     setLoading(true)
     setError(null)
     try {
-      const { needsEmailConfirmation } = await signUp(email, password, fullName, phone, role)
+      const { needsEmailConfirmation } = await signUp(email, password, fullName, phone, 'client')
       if (needsEmailConfirmation) {
         setConfirmSent(true)
       } else {
-        navigate(role === 'shop_owner' ? '/owner' : '/')
+        navigate('/')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -83,26 +74,10 @@ export function SignUp() {
   return (
     <div className="mx-auto max-w-sm px-5 py-16">
       <h1 className="mb-6 font-display text-2xl font-bold text-bone">Sign up</h1>
+      <p className="mb-6 text-sm text-mute">
+        Own a barbershop? Owner access is enabled after approval.
+      </p>
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">I am a…</label>
-          <div className="grid gap-2">
-            {ROLE_OPTIONS.map((opt) => (
-              <button
-                type="button"
-                key={opt.value}
-                onClick={() => setRole(opt.value)}
-                className={`rounded border px-3 py-2.5 text-left transition-colors ${
-                  role === opt.value ? 'border-brand bg-brand/10' : 'border-line bg-panel2'
-                }`}
-              >
-                <p className="text-sm font-medium text-bone">{opt.label}</p>
-                <p className="text-xs text-mute">{opt.blurb}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div>
           <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Full name</label>
           <input
