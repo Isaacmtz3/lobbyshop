@@ -60,7 +60,10 @@ export function ShopDisplay() {
         () => loadBoard(shop.id),
       )
       .subscribe()
+    // Realtime only delivers rows the viewer can read, and a logged-out TV can't read raw queue rows.
+    const poll = setInterval(() => loadBoard(shop.id), 10_000)
     return () => {
+      clearInterval(poll)
       supabase.removeChannel(channel)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

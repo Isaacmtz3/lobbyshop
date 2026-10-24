@@ -43,8 +43,11 @@ export function ShopDirectory() {
         loadStats()
       })
       .subscribe()
+    // Realtime only delivers queue rows this viewer can read (their own), so other shops' changes need polling.
+    const poll = setInterval(loadStats, 20_000)
 
     return () => {
+      clearInterval(poll)
       supabase.removeChannel(channel)
     }
   }, [])

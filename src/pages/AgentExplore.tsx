@@ -31,8 +31,11 @@ export function AgentExplore() {
       .channel('agent-queue-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'queue' }, () => loadStats())
       .subscribe()
+    // Realtime only delivers queue rows this viewer can read, so wait counts need polling.
+    const poll = setInterval(loadStats, 20_000)
 
     return () => {
+      clearInterval(poll)
       supabase.removeChannel(channel)
     }
   }, [])

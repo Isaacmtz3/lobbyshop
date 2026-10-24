@@ -91,8 +91,14 @@ export function ShopDetail() {
         },
       )
       .subscribe()
+    // Realtime only delivers this viewer's own queue rows, so other people moving through the line needs polling.
+    const poll = setInterval(() => {
+      loadStats(shop.id)
+      loadMyPosition(shop.id)
+    }, 15_000)
 
     return () => {
+      clearInterval(poll)
       supabase.removeChannel(channel)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
