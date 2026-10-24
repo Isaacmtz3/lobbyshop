@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { ProfileRole } from '../types'
+import { supabase } from '../lib/supabase'
+import type { ProfileRole, Shop, ShopQueueStats } from '../types'
 
 const ICON_PROPS = {
   fill: 'none',
@@ -180,6 +182,54 @@ export function Landing() {
     navigate('/signup', { state: { defaultRole } })
   }
 
+  /** Featured-shop card data, loaded live from Supabase — the card used to
+   * show hardcoded "8 min wait / 3 barbers" figures that matched no real
+   * page, so it now reads the same shop_queue_stats rows the directory and
+   * shop pages use. On any load failure the card says so instead of
+   * inventing numbers. */
+  const [featuredShop, setFeaturedShop] = useState<Shop | null>(null)
+  const [featuredStats, setFeaturedStats] = useState<ShopQueueStats | null>(null)
+  const [featuredBarbers, setFeaturedBarbers] = useState<number | null>(null)
+  const [featuredFailed, setFeaturedFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+
+    async function loadFeatured() {
+      const { data: shopData } = await supabase
+        .from('shops')
+        .select('*')
+        .eq('slug', 'platinum-kutz')
+        .maybeSingle()
+      if (!active) return
+      if (!shopData) {
+        setFeaturedFailed(true)
+        return
+      }
+      const shop = shopData as Shop
+      setFeaturedShop(shop)
+      const [{ data: statsData }, { data: barberData }] = await Promise.all([
+        supabase.from('shop_queue_stats').select('*').eq('shop_id', shop.id).maybeSingle(),
+        supabase.from('barbers').select('id').eq('shop_id', shop.id).eq('active', true),
+      ])
+      if (!active) return
+      setFeaturedStats(
+        (statsData as ShopQueueStats) ?? {
+          shop_id: shop.id,
+          waiting_count: 0,
+          in_chair_count: 0,
+          completed_today: 0,
+        },
+      )
+      setFeaturedBarbers((barberData as { id: string }[] | null)?.length ?? 0)
+    }
+
+    loadFeatured()
+    return () => {
+      active = false
+    }
+  }, [])
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-white text-slate-900">
       {/* Gradient-mesh backdrop: two soft, oversized blurred blobs behind the
@@ -233,7 +283,7 @@ export function Landing() {
 
             <div className="mt-9 max-w-sm space-y-3">
               <button
-                onClick={() => goToSignUp('client')}
+                onClick={() => navigate('/browse')}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand px-6 py-4 text-base font-semibold text-white shadow-[0_1px_2px_rgba(0,0,0,0.05),0_12px_24px_-8px_rgba(47,111,237,0.55)] transition-all hover:-translate-y-0.5 hover:bg-brandBright hover:shadow-[0_1px_2px_rgba(0,0,0,0.05),0_16px_28px_-8px_rgba(47,111,237,0.65)] active:translate-y-0"
               >
                 <PinIcon />
@@ -285,18 +335,38 @@ export function Landing() {
                 <div className="mt-4 h-1 w-10 rounded-full bg-brand" />
               </div>
               <div className="rounded-2xl border border-slate-100 bg-white p-5 text-slate-900 shadow-[0_8px_16px_-4px_rgba(0,0,0,0.1),0_24px_48px_-16px_rgba(0,0,0,0.25)]">
-                <p className="font-display text-lg font-bold">Platinum Kutz Barbershop</p>
-                <div className="mt-2 flex items-center gap-1.5 text-sm text-volt">
-                  <span className="h-2 w-2 rounded-full bg-volt shadow-[0_0_0_3px_rgba(53,208,127,0.15)]" />
-                  Live wait time
-                </div>
-                <p className="mt-1 text-2xl font-bold text-slate-900">8 min wait</p>
+                <p className="font-display text-lg font-bold">
+                  {featuredShop?.name ?? 'Platinum Kutz Barbershop'}
+                </p>
+                {featuredFailed ? (
+                  <div className="mt-2 flex items-center gap-1.5 text-sm text-slate-500">
+                    Shop board unavailable
+                  </div>
+                ) : (
+                  <div className="mt-2 flex items-center gap-1.5 text-sm text-volt">
+                    <span className="h-2 w-2 rounded-full bg-volt shadow-[0_0_0_3px_rgba(53,208,127,0.15)]" />
+                    Live wait time
+                  </div>
+                )}
+                <p className="mt-1 text-2xl font-bold text-slate-900">
+                  {featuredFailed
+                    ? 'See live wait times'
+                    : featuredStats
+                      ? featuredStats.waiting_count > 0
+                        ? `${featuredStats.waiting_count} waiting`
+                        : 'No wait'
+                      : 'Checking…'}
+                </p>
                 <div className="mt-2 flex items-center gap-1.5 text-sm text-slate-500">
                   <PeopleIcon />
-                  3 barbers available
+                  {featuredFailed
+                    ? 'Tap below to view the shop board'
+                    : featuredBarbers == null
+                      ? '…'
+                      : `${featuredBarbers} barbers`}
                 </div>
                 <button
-                  onClick={() => goToSignUp('client')}
+                  onClick={() => navigate(`/shop/${featuredShop?.slug ?? 'platinum-kutz'}`)}
                   className="mt-4 w-full rounded-xl bg-brand py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-px hover:bg-brandBright hover:shadow-md active:translate-y-0"
                 >
                   Join queue
