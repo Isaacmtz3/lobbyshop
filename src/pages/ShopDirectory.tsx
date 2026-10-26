@@ -14,8 +14,10 @@ export function ShopDirectory() {
   const [locationState, setLocationState] = useState<LocationState>('idle')
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
 
+  // Directory aggregate: counts only, no client data. The per-shop board
+  // and stats reads elsewhere are scoped to one shop each.
   async function loadStats() {
-    const { data } = await supabase.from('shop_queue_stats').select('*')
+    const { data } = await supabase.rpc('directory_shop_counts')
     if (data) {
       const byShop: Record<string, ShopQueueStats> = {}
       for (const row of data as ShopQueueStats[]) byShop[row.shop_id] = row

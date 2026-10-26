@@ -184,7 +184,7 @@ export function Landing() {
 
   /** Featured-shop card data, loaded live from Supabase — the card used to
    * show hardcoded "8 min wait / 3 barbers" figures that matched no real
-   * page, so it now reads the same shop_queue_stats rows the directory and
+   * page, so it now reads the same per-shop stats function the directory and
    * shop pages use. On any load failure the card says so instead of
    * inventing numbers. */
   const [featuredShop, setFeaturedShop] = useState<Shop | null>(null)
@@ -209,12 +209,12 @@ export function Landing() {
       const shop = shopData as Shop
       setFeaturedShop(shop)
       const [{ data: statsData }, { data: barberData }] = await Promise.all([
-        supabase.from('shop_queue_stats').select('*').eq('shop_id', shop.id).maybeSingle(),
+        supabase.rpc('shop_stats', { p_shop_id: shop.id }),
         supabase.from('barbers').select('id').eq('shop_id', shop.id).eq('active', true),
       ])
       if (!active) return
       setFeaturedStats(
-        (statsData as ShopQueueStats) ?? {
+        (statsData as ShopQueueStats[] | null)?.[0] ?? {
           shop_id: shop.id,
           waiting_count: 0,
           in_chair_count: 0,

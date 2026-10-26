@@ -56,8 +56,9 @@ export function ShopDetail() {
   const guestEntryIdRef = useRef<string | null>(null)
 
   async function loadStats(shopId: string) {
-    const { data } = await supabase.from('shop_queue_stats').select('*').eq('shop_id', shopId).maybeSingle()
-    setStats((data as ShopQueueStats) ?? { shop_id: shopId, waiting_count: 0, in_chair_count: 0, completed_today: 0 })
+    const { data } = await supabase.rpc('shop_stats', { p_shop_id: shopId })
+    const row = (data as ShopQueueStats[] | null)?.[0]
+    setStats(row ?? { shop_id: shopId, waiting_count: 0, in_chair_count: 0, completed_today: 0 })
   }
 
   async function loadMyPosition(shopId: string) {
@@ -76,12 +77,15 @@ export function ShopDetail() {
     setMyPosition(data as MyQueuePosition | null)
   }
 
-  // Guest position comes from the public queue board view (the same view the
-  // TV display reads), matched by the guest's own row id. Raw queue rows are
-  // not readable anonymously, so the board view is the only guest-safe source.
+  // Guest position comes from the per-shop board function (masked names,
+  // this shop only), matched by the guest's own row id. Raw queue rows are
+  // not readable anonymously, so the board function is the guest-safe source.
+  // A guest's spot only resolves on their own shop's page — never another
+  // shop's board.
   async function loadGuestPosition(entryId: string) {
-    const { data } = await supabase.from('shop_queue_board').select('*').eq('id', entryId).maybeSingle()
-    const row = data as ShopQueueBoardEntry | null
+    if (!shop) return
+    const { data } = await supabase.rpc('shop_board', { p_shop_id: shop.id })
+    const row = ((data as ShopQueueBoardEntry[] | null) ?? []).find((r) => r.id === entryId) ?? null
     if (!row || (row.status !== 'waiting' && row.status !== 'called' && row.status !== 'in_chair')) {
       setGuestBoard(null)
       setGuestEntry(null)

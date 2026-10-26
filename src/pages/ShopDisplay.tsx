@@ -20,12 +20,11 @@ export function ShopDisplay() {
   const [loading, setLoading] = useState(true)
   const now = useClock()
 
+  // Tenant-isolated board: the per-shop function returns masked names for
+  // this shop only, ordered by check-in time. It replaces the old board
+  // view, which returned every shop's rows to anyone who queried it.
   async function loadBoard(shopId: string) {
-    const { data } = await supabase
-      .from('shop_queue_board')
-      .select('*')
-      .eq('shop_id', shopId)
-      .order('checked_in_at')
+    const { data } = await supabase.rpc('shop_board', { p_shop_id: shopId })
     setBoard((data as ShopQueueBoardEntry[]) ?? [])
   }
 

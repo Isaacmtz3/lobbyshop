@@ -51,8 +51,9 @@ export function OwnerDashboard({
   }
 
   async function loadStats() {
-    const { data } = await supabase.from('shop_queue_stats').select('*').eq('shop_id', shop.id).maybeSingle()
-    setCompletedToday(data?.completed_today ?? 0)
+    const { data } = await supabase.rpc('shop_stats', { p_shop_id: shop.id })
+    const row = (data as { completed_today: number }[] | null)?.[0]
+    setCompletedToday(row?.completed_today ?? 0)
   }
 
   useEffect(() => {

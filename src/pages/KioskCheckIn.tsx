@@ -25,14 +25,10 @@ export function KioskCheckIn() {
   const [success, setSuccess] = useState(false)
 
   async function loadWaitingCounts(shopId: string) {
-    const { data } = await supabase
-      .from('shop_queue_board')
-      .select('barber_id')
-      .eq('shop_id', shopId)
-      .eq('status', 'waiting')
+    const { data } = await supabase.rpc('shop_board', { p_shop_id: shopId })
     const counts: Record<string, number> = {}
-    for (const row of (data as Pick<ShopQueueBoardEntry, 'barber_id'>[]) ?? []) {
-      if (row.barber_id) counts[row.barber_id] = (counts[row.barber_id] ?? 0) + 1
+    for (const row of (data as ShopQueueBoardEntry[]) ?? []) {
+      if (row.status === 'waiting' && row.barber_id) counts[row.barber_id] = (counts[row.barber_id] ?? 0) + 1
     }
     setWaitingCounts(counts)
   }
