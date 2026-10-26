@@ -1,10 +1,15 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { isSafeNextPath, savePendingNext } from '../lib/pendingNext'
 import { useAuth } from '../contexts/AuthContext'
 
 export function SignUp() {
   const { signUp, resendConfirmation } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const next = searchParams.get('next')
+  const safeNext = isSafeNextPath(next) ? next : null
+  const emailRedirectTo = safeNext ? `${window.location.origin}${safeNext}` : undefined
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
@@ -21,7 +26,7 @@ export function SignUp() {
     setResending(true)
     setResendError(null)
     try {
-      await resendConfirmation(email)
+      await resendConfirmation(email, emailRedirectTo)
       setResent(true)
     } catch (err) {
       setResendError(err instanceof Error ? err.message : 'Something went wrong')
@@ -36,11 +41,19 @@ export function SignUp() {
     setLoading(true)
     setError(null)
     try {
-      const { needsEmailConfirmation } = await signUp(email, password, fullName, phone, 'client')
+      if (safeNext) savePendingNext(safeNext)
+      const { needsEmailConfirmation } = await signUp(
+        email,
+        password,
+        fullName,
+        phone,
+        'client',
+        emailRedirectTo,
+      )
       if (needsEmailConfirmation) {
         setConfirmSent(true)
       } else {
-        navigate('/')
+        navigate(safeNext ?? '/')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -54,7 +67,10 @@ export function SignUp() {
       <div className="mx-auto max-w-sm px-5 py-16 text-center">
         <h1 className="mb-3 font-display text-2xl font-bold text-bone">Check your email</h1>
         <p className="text-sm text-mute">
-          We sent a confirmation link to {email}. Click it, then come back and sign in.
+          We sent a confirmation link to {email}.{' '}
+          {safeNext
+            ? "Click it, then you'll come right back here to continue checking in."
+            : 'Click it, then come back and sign in.'}
         </p>
         <p className="mt-4 text-sm text-mute">
           Didn't get it?{' '}
@@ -150,7 +166,10 @@ export function SignUp() {
       </form>
       <p className="mt-4 text-sm text-mute">
         Already have an account?{' '}
-        <Link to="/login" className="text-brandBright hover:underline">
+        <Link
+          to={safeNext ? `/login?next=${encodeURIComponent(safeNext)}` : '/login'}
+          className="text-brandBright hover:underline"
+        >
           Sign in
         </Link>
       </p>

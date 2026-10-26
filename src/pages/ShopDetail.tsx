@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -16,7 +16,6 @@ import {
   type Barber,
   type MyQueuePosition,
   type Shop,
-  type ShopQueueBoardEntry,
   type ShopQueueStats,
   type ShopService,
 } from '../types'
@@ -42,18 +41,8 @@ export function ShopDetail() {
   const [etaMinutes, setEtaMinutes] = useState<number>(ETA_OPTIONS[1])
   const [checkingIn, setCheckingIn] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [servicesOpen, setServicesOpen] = useState(false)
 
-  // Guest check-in: tracked by the inserted walk-in row's id, held in page
-  // state only (a refresh loses it — guests can simply check in again).
-  const [guestName, setGuestName] = useState('')
-  const [guestPhone, setGuestPhone] = useState('')
-  const [guestEmail, setGuestEmail] = useState('')
-  const [guestCheckingIn, setGuestCheckingIn] = useState(false)
-  const [guestError, setGuestError] = useState<string | null>(null)
-  const [guestNotice, setGuestNotice] = useState<string | null>(null)
-  const [guestEntry, setGuestEntry] = useState<{ id: string; name: string; service: string } | null>(null)
-  const [guestBoard, setGuestBoard] = useState<ShopQueueBoardEntry | null>(null)
-  const guestEntryIdRef = useRef<string | null>(null)
 
   async function loadStats(shopId: string) {
     const { data } = await supabase.rpc('shop_stats', { p_shop_id: shopId })
@@ -77,24 +66,6 @@ export function ShopDetail() {
     setMyPosition(data as MyQueuePosition | null)
   }
 
-  // Guest position comes from the per-shop board function (masked names,
-  // this shop only), matched by the guest's own row id. Raw queue rows are
-  // not readable anonymously, so the board function is the guest-safe source.
-  // A guest's spot only resolves on their own shop's page — never another
-  // shop's board.
-  async function loadGuestPosition(entryId: string) {
-    if (!shop) return
-    const { data } = await supabase.rpc('shop_board', { p_shop_id: shop.id })
-    const row = ((data as ShopQueueBoardEntry[] | null) ?? []).find((r) => r.id === entryId) ?? null
-    if (!row || (row.status !== 'waiting' && row.status !== 'called' && row.status !== 'in_chair')) {
-      setGuestBoard(null)
-      setGuestEntry(null)
-      guestEntryIdRef.current = null
-      setGuestNotice('Your check-in is no longer in line.')
-      return
-    }
-    setGuestBoard(row)
-  }
 
   useEffect(() => {
     if (!slug) return
@@ -150,7 +121,6 @@ export function ShopDetail() {
       loadStats(shop.id)
       loadMyPosition(shop.id)
       fetchShopServices(shop.id).then(setServices)
-      if (guestEntryIdRef.current) loadGuestPosition(guestEntryIdRef.current)
     }, 15_000)
 
     return () => {
@@ -195,62 +165,6 @@ export function ShopDetail() {
     await loadStats(shop.id)
   }
 
-  async function handleGuestCheckIn() {
-    if (!shop) return
-    if (getOpenState(parseShopHours(shop.hours), new Date()).state === 'closed') {
-      setGuestError('This shop is closed right now — check-in opens again at its next opening time.')
-      return
-    }
-    if (!guestName.trim() || !guestPhone.trim()) {
-      setGuestError('Please enter your name and phone number so the shop can reach you.')
-      return
-    }
-    setGuestCheckingIn(true)
-    setGuestError(null)
-    setGuestNotice(null)
-    // Walk-in row: exactly the shape the kiosk creates — shop set, no profile,
-    // no checked_in_by. That branch is what the queue INSERT policy allows
-    // for anonymous users, so no auth is needed here.
-    const { data, error: insertError } = await supabase
-      .from('queue')
-      .insert({
-        shop_id: shop.id,
-        client_name: guestName.trim(),
-        phone: guestPhone.trim(),
-        email: guestEmail.trim() || null,
-        service,
-        barber_id: barberId || null,
-        eta_minutes: etaMinutes,
-      })
-      .select('id')
-      .single()
-    setGuestCheckingIn(false)
-    if (insertError || !data) {
-      setGuestError(insertError?.message ?? 'Could not check in — please try again.')
-      return
-    }
-    const entry = { id: data.id as string, name: guestName.trim(), service }
-    setGuestEntry(entry)
-    guestEntryIdRef.current = entry.id
-    await loadGuestPosition(entry.id)
-    await loadStats(shop.id)
-  }
-
-  async function handleGuestCancel() {
-    if (!shop || !guestEntry) return
-    setGuestCheckingIn(true)
-    const { error: deleteError } = await supabase.from('queue').delete().eq('id', guestEntry.id)
-    setGuestCheckingIn(false)
-    if (deleteError) {
-      setGuestError(deleteError.message)
-      return
-    }
-    setGuestEntry(null)
-    setGuestBoard(null)
-    guestEntryIdRef.current = null
-    await loadStats(shop.id)
-  }
-
   async function handleCancel() {
     if (!shop || !myPosition) return
     setCheckingIn(true)
@@ -281,7 +195,7 @@ export function ShopDetail() {
   const openState = getOpenState(hours, new Date())
   const isClosed = openState.state === 'closed'
   const nextOpening = openState.state === 'closed' ? openState.nextOpening : null
-  const isCalled = myPosition?.status === 'called' || guestBoard?.status === 'called'
+  const isCalled = myPosition?.status === 'called'
 
   // Live menu from the database (generic fallback until the shop sets one).
   const serviceOptions = toServiceOptions(services, DEFAULT_SERVICES)
@@ -364,9 +278,21 @@ export function ShopDetail() {
       )}
 
       {services.length > 0 && (
-        <div className="mb-8 rounded-md border border-line bg-panel p-6">
-          <h2 className="mb-3 font-display text-sm uppercase tracking-wider text-mute">Services &amp; prices</h2>
-          <div className="divide-y divide-line">
+        <div className="mb-8 overflow-hidden rounded-md border border-line bg-panel">
+          <button
+            type="button"
+            onClick={() => setServicesOpen((o) => !o)}
+            aria-expanded={servicesOpen}
+            className="flex w-full items-center justify-between px-6 py-4 text-left"
+          >
+            <span className="font-display text-sm uppercase tracking-wider text-mute">Services &amp; prices</span>
+            <span className="flex items-center gap-2 text-sm text-mute">
+              {services.length} services
+              <span className="text-base text-bone">{servicesOpen ? '▴' : '▾'}</span>
+            </span>
+          </button>
+          {servicesOpen && (
+            <div className="divide-y divide-line border-t border-line px-6 py-2">
             {services.map((s) => (
               <div key={s.id} className="flex items-baseline justify-between gap-3 py-2">
                 <span className="text-sm text-bone">{s.name}</span>
@@ -376,7 +302,8 @@ export function ShopDetail() {
                 </span>
               </div>
             ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -405,43 +332,9 @@ export function ShopDetail() {
             Cancel check-in
           </button>
         </div>
-      ) : guestBoard && guestEntry ? (
-        <div
-          className="mb-8 rounded-md border p-6 text-center"
-          style={{ borderColor: shop.accent_color, backgroundColor: `${shop.accent_color}1a` }}
-        >
-          {guestBoard.status === 'called' ? (
-            <>
-              <p className="text-xs uppercase tracking-wider text-mute">You're up!</p>
-              <p className="font-display text-3xl font-bold text-bone">Head to the shop now</p>
-            </>
-          ) : guestBoard.status === 'in_chair' ? (
-            <>
-              <p className="text-xs uppercase tracking-wider text-mute">You're in the chair</p>
-              <p className="font-display text-3xl font-bold text-bone">Enjoy your cut</p>
-            </>
-          ) : (
-            <>
-              <p className="text-xs uppercase tracking-wider text-mute">
-                You're checked in as {guestEntry.name}
-              </p>
-              <p className="font-display text-5xl font-bold text-bone">#{guestBoard.position}</p>
-            </>
-          )}
-          <p className="mt-1 text-sm text-mute">{guestBoard.service}</p>
-          <button
-            onClick={handleGuestCancel}
-            disabled={guestCheckingIn}
-            className="mt-4 text-sm text-mute underline-offset-2 hover:text-crimsonBright hover:underline disabled:opacity-50"
-          >
-            Cancel check-in
-          </button>
-        </div>
       ) : (
         <div className="mb-8 rounded-md border border-line bg-panel p-6">
           <h2 className="mb-4 font-display text-sm uppercase tracking-wider text-mute">Check in</h2>
-
-          {guestNotice && <p className="mb-4 text-sm text-mute">{guestNotice}</p>}
 
           {isClosed ? (
             <div>
@@ -454,113 +347,23 @@ export function ShopDetail() {
             <>
           {!user && (
             <div className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Full name</label>
-                <input
-                  value={guestName}
-                  onChange={(e) => setGuestName(e.target.value)}
-                  className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Phone</label>
-                <input
-                  value={guestPhone}
-                  onChange={(e) => setGuestPhone(e.target.value)}
-                  className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-                />
-                <p className="mt-1 text-xs text-mute">So the shop can reach you about your spot.</p>
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">
-                  Email (optional)
-                </label>
-                <input
-                  value={guestEmail}
-                  onChange={(e) => setGuestEmail(e.target.value)}
-                  className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-                />
-                <p className="mt-1 text-xs text-mute">So we can email you when you're called.</p>
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Service</label>
-                <select
-                  value={service}
-                  onChange={(e) => setService(e.target.value)}
-                  className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-                >
-                  {serviceOptions.map((s) => (
-                    <option key={s.name} value={s.name}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {barbers.length > 0 && (
-                <div>
-                  <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">
-                    Barber (optional)
-                  </label>
-                  <select
-                    value={barberId}
-                    onChange={(e) => setBarberId(e.target.value)}
-                    className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-                  >
-                    <option value="">No preference</option>
-                    {barbers.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">
-                  When will you arrive?
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {ETA_OPTIONS.map((mins) => (
-                    <button
-                      key={mins}
-                      type="button"
-                      onClick={() => setEtaMinutes(mins)}
-                      className={`rounded border px-3 py-2.5 text-sm font-medium transition-colors ${
-                        etaMinutes === mins ? 'border-brand bg-brand/10 text-bone' : 'border-line bg-panel2 text-mute'
-                      }`}
-                    >
-                      {mins} min
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {guestError && <p className="text-sm text-crimsonBright">{guestError}</p>}
-
-              <button
-                onClick={handleGuestCheckIn}
-                disabled={guestCheckingIn || !guestName.trim() || !guestPhone.trim()}
-                className="w-full rounded px-4 py-2.5 font-medium text-bone transition-colors disabled:opacity-40"
-                style={{ backgroundColor: shop.accent_color }}
-              >
-                {guestCheckingIn ? 'Checking in…' : 'Check in as guest'}
-              </button>
-
               <p className="text-sm text-mute">
-                No account needed — your spot is tracked on this page. Want it on your account instead?{' '}
-                <Link to="/login" className="text-brandBright hover:underline">
-                  Sign in
-                </Link>{' '}
-                or{' '}
-                <Link to="/signup" className="text-brandBright hover:underline">
-                  sign up
-                </Link>
-                .
+                Check-in needs a free account — that's how the shop knows your spot is really yours.
+              </p>
+              <Link
+                to={`/login?next=/shop/${shop.slug}`}
+                className="block w-full rounded bg-brand px-4 py-2.5 text-center font-medium text-white transition-colors hover:bg-brandBright"
+              >
+                Sign in to check in
+              </Link>
+              <Link
+                to={`/signup?next=/shop/${shop.slug}`}
+                className="block w-full rounded border-2 border-brand bg-panel px-4 py-2.5 text-center font-medium text-brand transition-colors hover:bg-brand/5"
+              >
+                Create a free account
+              </Link>
+              <p className="text-sm text-mute">
+                No account? Walk in and the barber can add you at the desk.
               </p>
             </div>
           )}

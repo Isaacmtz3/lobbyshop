@@ -15,11 +15,12 @@ interface AuthContextValue {
     fullName: string,
     phone: string,
     role: ProfileRole,
+    emailRedirectTo?: string,
   ) => Promise<{ needsEmailConfirmation: boolean }>
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   sendPasswordReset: (email: string) => Promise<void>
-  resendConfirmation: (email: string) => Promise<void>
+  resendConfirmation: (email: string, emailRedirectTo?: string) => Promise<void>
   refreshProfile: () => Promise<void>
 }
 
@@ -58,11 +59,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => listener.subscription.unsubscribe()
   }, [])
 
-  async function signUp(email: string, password: string, fullName: string, phone: string, role: ProfileRole) {
+  async function signUp(
+    email: string,
+    password: string,
+    fullName: string,
+    phone: string,
+    role: ProfileRole,
+    emailRedirectTo?: string,
+  ) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName, phone: phone || null, role } },
+      options: {
+        data: { full_name: fullName, phone: phone || null, role },
+        ...(emailRedirectTo ? { emailRedirectTo } : {}),
+      },
     })
     if (error) throw error
     return { needsEmailConfirmation: !data.session }
@@ -84,8 +95,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error
   }
 
-  async function resendConfirmation(email: string) {
-    const { error } = await supabase.auth.resend({ type: 'signup', email })
+  async function resendConfirmation(email: string, emailRedirectTo?: string) {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { ...(emailRedirectTo ? { emailRedirectTo } : {}) },
+    })
     if (error) throw error
   }
 

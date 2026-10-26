@@ -1,6 +1,7 @@
 import { Link, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { NavBar } from './components/NavBar'
 import { useAuth } from './contexts/AuthContext'
+import { consumePendingNext } from './lib/pendingNext'
 import { CommandCenter } from './pages/CommandCenter'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { KioskCheckIn } from './pages/KioskCheckIn'
@@ -49,6 +50,10 @@ function RootRoute() {
     return <div className="flex min-h-screen items-center justify-center bg-void text-mute">Loading…</div>
   }
   if (user) {
+    // Email-confirmation round trip may land back on "/" instead of the
+    // shop page — send the fresh account straight there to finish checking in.
+    const pending = consumePendingNext()
+    if (pending) return <Navigate to={pending} replace />
     if (profile?.role === 'shop_owner') return <Navigate to="/owner" replace />
     if (profile?.role === 'admin') return <Navigate to="/command-center" replace />
     return <Navigate to="/browse" replace />

@@ -1,10 +1,14 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { isSafeNextPath } from '../lib/pendingNext'
 
 export function Login() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const next = searchParams.get('next')
+  const safeNext = isSafeNextPath(next) ? next : null
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -16,7 +20,7 @@ export function Login() {
     setError(null)
     try {
       await signIn(email, password)
-      navigate('/')
+      navigate(safeNext ?? '/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -64,7 +68,10 @@ export function Login() {
       </p>
       <p className="mt-4 text-sm text-mute">
         No account?{' '}
-        <Link to="/signup" className="text-brandBright hover:underline">
+        <Link
+          to={safeNext ? `/signup?next=${encodeURIComponent(safeNext)}` : '/signup'}
+          className="text-brandBright hover:underline"
+        >
           Sign up
         </Link>
       </p>

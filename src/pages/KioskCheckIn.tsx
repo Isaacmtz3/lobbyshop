@@ -1,22 +1,24 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { formatNextOpening, getOpenState, parseShopHours } from '../lib/hours'
 import { fetchShopServices, toServiceOptions } from '../lib/services'
 import { ETA_OPTIONS, type Barber, type Shop, type ShopQueueBoardEntry, type ShopService } from '../types'
 
 const DEFAULT_SERVICES = ['Haircut', 'Haircut + Beard', 'Beard trim', 'Kids cut']
+const ALREADY_IN_QUEUE_MESSAGE =
+  "You're already checked in somewhere else — leave that queue first before joining a new one."
 
 export function KioskCheckIn() {
   const { slug } = useParams<{ slug: string }>()
+  const { user, profile, signOut } = useAuth()
   const [shop, setShop] = useState<Shop | null>(null)
   const [barbers, setBarbers] = useState<Barber[]>([])
   const [services, setServices] = useState<ShopService[]>([])
   const [waitingCounts, setWaitingCounts] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
 
-  const [clientName, setClientName] = useState('')
-  const [phone, setPhone] = useState('')
   const [service, setService] = useState(DEFAULT_SERVICES[0])
   const [barberId, setBarberId] = useState('')
   const [etaMinutes, setEtaMinutes] = useState<number>(ETA_OPTIONS[1])
@@ -64,7 +66,7 @@ export function KioskCheckIn() {
         () => loadWaitingCounts(shop.id),
       )
       .subscribe()
-    // Realtime only delivers rows the viewer can read, and a logged-out kiosk can't read raw queue rows.
+    // Realtime delivers the signed-in kiosk user's own rows; polling stays as backup.
     const poll = setInterval(() => loadWaitingCounts(shop.id), 15_000)
     return () => {
       clearInterval(poll)
@@ -83,7 +85,7 @@ export function KioskCheckIn() {
   }, [services])
 
   async function handleCheckIn() {
-    if (!shop || !clientName.trim()) return
+    if (!shop || !user) return
     if (getOpenState(parseShopHours(shop.hours), new Date()).state === 'closed') {
       setError('This shop is closed right now — check-in opens again at its next opening time.')
       return
@@ -92,29 +94,24 @@ export function KioskCheckIn() {
     setError(null)
     const { error: insertError } = await supabase.from('queue').insert({
       shop_id: shop.id,
-      client_name: clientName.trim(),
-      phone: phone.trim() || null,
+      client_profile_id: user.id,
+      checked_in_by: user.id,
+      client_name: profile?.full_name ?? user.email ?? 'Client',
+      phone: profile?.phone ?? null,
       service,
       barber_id: barberId || null,
       eta_minutes: etaMinutes,
     })
     setSubmitting(false)
     if (insertError) {
-      setError(insertError.message)
+      setError(insertError.code === '23505' ? ALREADY_IN_QUEUE_MESSAGE : insertError.message)
       return
     }
     setSuccess(true)
     loadWaitingCounts(shop.id)
   }
 
-  function startOver() {
-    setClientName('')
-    setPhone('')
-    setService(toServiceOptions(services, DEFAULT_SERVICES)[0]?.name ?? DEFAULT_SERVICES[0])
-    setBarberId('')
-    setEtaMinutes(ETA_OPTIONS[1])
-    setSuccess(false)
-  }
+
 
   if (loading) {
     return (
@@ -156,39 +153,45 @@ export function KioskCheckIn() {
             Check-in opens {formatNextOpening(nextOpening, new Date())}.
           </p>
         </div>
+      ) : !user ? (
+        <div className="w-full max-w-md rounded-md border border-line bg-panel p-8 text-center">
+          <p className="mb-1 font-display text-xl font-bold text-bone">Sign in to check in</p>
+          <p className="mb-6 text-sm text-mute">
+            Check-in needs a free account — that's how the shop knows your spot is really yours.
+          </p>
+          <Link
+            to={`/login?next=/kiosk/${slug}`}
+            className="mb-3 block w-full rounded bg-brand px-4 py-3 text-center text-base font-medium text-white transition-colors hover:bg-brandBright"
+          >
+            Sign in
+          </Link>
+          <Link
+            to={`/signup?next=/kiosk/${slug}`}
+            className="block w-full rounded border-2 border-brand bg-panel px-4 py-3 text-center text-base font-medium text-brand transition-colors hover:bg-brand/5"
+          >
+            Create a free account
+          </Link>
+          <p className="mt-6 text-sm text-mute">No account? Ask the barber to add you at the desk.</p>
+        </div>
       ) : (
-        <>
       <div className="w-full max-w-md">
         {success ? (
           <div className="rounded-md border p-8 text-center" style={{ borderColor: shop.accent_color }}>
             <p className="mb-1 font-display text-xl font-bold text-bone">You're checked in!</p>
             <p className="mb-6 text-sm text-mute">Have a seat — we'll call you when it's your turn.</p>
             <button
-              onClick={startOver}
+              onClick={async () => {
+                await signOut()
+                setSuccess(false)
+              }}
               className="w-full rounded px-4 py-3 text-base font-medium text-bone transition-colors"
               style={{ backgroundColor: shop.accent_color }}
             >
-              Check in another client
+              Sign out
             </button>
           </div>
         ) : (
           <div className="space-y-4">
-            <div>
-              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Full name</label>
-              <input
-                value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
-                className="w-full rounded border border-line bg-panel2 px-3 py-3 text-base text-bone"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Phone (optional)</label>
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full rounded border border-line bg-panel2 px-3 py-3 text-base text-bone"
-              />
-            </div>
             <div>
               <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Service</label>
               <select
@@ -260,7 +263,7 @@ export function KioskCheckIn() {
             {error && <p className="text-sm text-crimsonBright">{error}</p>}
             <button
               onClick={handleCheckIn}
-              disabled={submitting || !clientName.trim()}
+              disabled={submitting}
               className="w-full rounded px-4 py-3 text-base font-medium text-bone transition-colors disabled:opacity-40"
               style={{ backgroundColor: shop.accent_color }}
             >
@@ -269,7 +272,6 @@ export function KioskCheckIn() {
           </div>
         )}
       </div>
-        </>
       )}
     </div>
   )

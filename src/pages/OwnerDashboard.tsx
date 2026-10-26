@@ -968,7 +968,7 @@ function SettingsTab({ shop, onShopUpdated }: { shop: Shop; onShopUpdated: (shop
         <div>
           <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Opening hours</label>
           <p className="mb-2 text-xs text-mute">
-            Shown on your shop page. While you're closed, guests and clients can't check in — they see your
+            Shown on your shop page. While you're closed, clients can't check in — they see your
             next opening time instead.
           </p>
           <div className="space-y-2">
