@@ -15,13 +15,16 @@ import { ShopDisplay } from './pages/ShopDisplay'
 import { SignUp } from './pages/SignUp'
 import { TermsOfService } from './pages/TermsOfService'
 
-function RequireRole({ role, children }: { role: 'shop_owner'; children: React.ReactNode }) {
+/** Shop pages accept a shop owner OR the platform admin — the admin is the
+ * one exception to shop isolation, and he also owns a shop, so his single
+ * login needs both seats. */
+function RequireRole({ roles, children }: { roles: ('shop_owner' | 'admin')[]; children: React.ReactNode }) {
   const { user, profile, loading, profileLoading } = useAuth()
   if (loading || (user && profileLoading)) {
     return <div className="mx-auto max-w-3xl px-5 py-10 text-mute">Loading…</div>
   }
   if (!user) return <Navigate to="/login" replace />
-  if (profile?.role !== role) return <Navigate to="/" replace />
+  if (!profile || !roles.includes(profile.role as 'shop_owner' | 'admin')) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
@@ -47,6 +50,7 @@ function RootRoute() {
   }
   if (user) {
     if (profile?.role === 'shop_owner') return <Navigate to="/owner" replace />
+    if (profile?.role === 'admin') return <Navigate to="/command-center" replace />
     return <Navigate to="/browse" replace />
   }
   return <Landing />
@@ -67,6 +71,10 @@ function AppLayout() {
         <Link to="/privacy" className="hover:text-bone hover:underline">
           Privacy Policy
         </Link>
+        <span className="mx-2">·</span>
+        <a href="mailto:iceemtz3@gmail.com" className="hover:text-bone hover:underline">
+          Contact
+        </a>
       </footer>
     </div>
   )
@@ -91,7 +99,7 @@ function App() {
         <Route
           path="/owner"
           element={
-            <RequireRole role="shop_owner">
+            <RequireRole roles={['shop_owner', 'admin']}>
               <OwnerOnboarding />
             </RequireRole>
           }

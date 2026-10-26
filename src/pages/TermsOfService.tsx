@@ -9,14 +9,14 @@ export function TermsOfService() {
       <div className="space-y-8 text-sm leading-relaxed text-mute">
         <Section title="1. Agreement to these terms">
           <p>
-            These Terms of Service ("Terms") govern your access to and use of Lobby (the "Service"), a platform
+            These Terms of Service ("Terms") govern your access to and use of Lobbyshop (the "Service"), a platform
             that connects barbershops with clients looking for a haircut and lets shops manage a live queue. By
             creating an account or otherwise using the Service, you agree to these Terms. If you don't agree,
             don't use the Service.
           </p>
         </Section>
 
-        <Section title="2. Who can use Lobby">
+        <Section title="2. Who can use Lobbyshop">
           <p>
             You must be at least 13 years old to create a client account, and at least 18 years old to create a
             shop owner account. By creating an account, you confirm you meet this requirement and that the
@@ -25,7 +25,7 @@ export function TermsOfService() {
         </Section>
 
         <Section title="3. Accounts and roles">
-          <p>Lobby has a few account types, each with different responsibilities:</p>
+          <p>Lobbyshop has a few account types, each with different responsibilities:</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
             <li>
               <strong className="text-bone">Clients</strong> browse shops, check in to a queue, and track their
@@ -53,9 +53,9 @@ export function TermsOfService() {
 
         <Section title="5. Shop owner responsibilities">
           <p>
-            If you list a shop on Lobby, you're responsible for the accuracy of your shop's information (name,
+            If you list a shop on Lobbyshop, you're responsible for the accuracy of your shop's information (name,
             address, services, hours) and for complying with any licensing, health, or business regulations that
-            apply to operating a barbershop in your area. Lobby doesn't verify that shops are licensed or
+            apply to operating a barbershop in your area. Lobbyshop doesn't verify that shops are licensed or
             otherwise compliant with local law.
           </p>
         </Section>
@@ -72,7 +72,7 @@ export function TermsOfService() {
 
         <Section title="7. Fees">
           <p>
-            Lobby is currently free to use for both clients and shops. We may introduce paid features or
+            Lobbyshop is currently free to use for both clients and shops. We may introduce paid features or
             subscriptions in the future, and if we do, we'll give notice before any charge applies to your
             account.
           </p>
@@ -80,7 +80,7 @@ export function TermsOfService() {
 
         <Section title="8. Third-party services">
           <p>
-            Lobby relies on third-party providers to operate — including a database and authentication provider,
+            Lobbyshop relies on third-party providers to operate — including a database and authentication provider,
             an address lookup/mapping provider, and a hosting provider. Your use of features built on these
             providers (like address autocomplete or "shops near me") is also subject to their own terms.
           </p>
@@ -90,14 +90,14 @@ export function TermsOfService() {
           <p>
             The Service is provided "as is," without warranties of any kind. We don't guarantee that wait time
             estimates, queue positions, or shop information will always be accurate or available without
-            interruption. Lobby is a platform connecting clients and shops — we aren't a party to, and aren't
+            interruption. Lobbyshop is a platform connecting clients and shops — we aren't a party to, and aren't
             responsible for, the actual haircut or service a shop provides.
           </p>
         </Section>
 
         <Section title="10. Limitation of liability">
           <p>
-            To the fullest extent permitted by law, Lobby and its operator won't be liable for any indirect,
+            To the fullest extent permitted by law, Lobbyshop and its operator won't be liable for any indirect,
             incidental, or consequential damages arising from your use of the Service, including missed
             appointments, lost time, or disputes between clients and shops.
           </p>
@@ -128,14 +128,13 @@ export function TermsOfService() {
 
         <Section title="14. Contact">
           <p>
-            Questions about these Terms? Reach out to the email associated with the Lobby account that manages
-            this platform.
+            Questions about these Terms? Reach out to <a href="mailto:iceemtz3@gmail.com" className="text-brand hover:underline">iceemtz3@gmail.com</a>.
           </p>
         </Section>
       </div>
 
       <Link to="/" className="mt-10 inline-block text-sm text-brandBright hover:underline">
-        ← Back to Lobby
+        ← Back to Lobbyshop
       </Link>
     </div>
   )

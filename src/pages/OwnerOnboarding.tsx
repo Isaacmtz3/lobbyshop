@@ -92,7 +92,7 @@ export function OwnerOnboarding() {
 
   return (
     <div className="mx-auto max-w-lg px-5 py-12">
-      <h1 className="mb-1 font-display text-2xl font-bold text-bone">List your shop on Lobby</h1>
+      <h1 className="mb-1 font-display text-2xl font-bold text-bone">List your shop on Lobbyshop</h1>
       <p className="mb-6 text-sm text-mute">
         Set up your queue board — clients will find you from the shop directory.
       </p>
@@ -112,7 +112,7 @@ export function OwnerOnboarding() {
         </div>
         <div>
           <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">
-            Lobby URL — lobby.app/shop/{slug || 'your-shop'}
+            Lobbyshop URL — lobbyshop.netlify.app/shop/{slug || 'your-shop'}
           </label>
           <input
             required
@@ -161,7 +161,7 @@ export function OwnerOnboarding() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded bg-brand px-4 py-2.5 font-medium text-bone transition-colors hover:bg-brandBright disabled:opacity-40"
+          className="w-full rounded bg-brand px-4 py-2.5 font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
         >
           {submitting ? 'Creating…' : 'Create shop'}
         </button>

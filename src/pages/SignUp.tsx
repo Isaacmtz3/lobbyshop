@@ -127,7 +127,7 @@ export function SignUp() {
             className="mt-0.5 h-4 w-4 shrink-0 rounded border-line bg-panel2 accent-brand"
           />
           <span>
-            I agree to Lobby's{' '}
+            I agree to Lobbyshop's{' '}
             <Link to="/terms" target="_blank" className="text-brandBright hover:underline">
               Terms of Service
             </Link>{' '}
@@ -143,7 +143,7 @@ export function SignUp() {
         <button
           type="submit"
           disabled={loading || !agreedToTerms}
-          className="w-full rounded bg-brand px-4 py-2.5 font-medium text-bone transition-colors hover:bg-brandBright disabled:opacity-40"
+          className="w-full rounded bg-brand px-4 py-2.5 font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
         >
           {loading ? 'Creating account…' : 'Create account'}
         </button>

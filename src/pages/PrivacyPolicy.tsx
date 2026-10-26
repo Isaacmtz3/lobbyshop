@@ -9,8 +9,8 @@ export function PrivacyPolicy() {
       <div className="space-y-8 text-sm leading-relaxed text-mute">
         <Section title="1. Introduction">
           <p>
-            This Privacy Policy explains what information Lobby collects, how we use it, and the choices you
-            have. It applies to everyone who uses Lobby — clients and shop owners.
+            This Privacy Policy explains what information Lobbyshop collects, how we use it, and the choices you
+            have. It applies to everyone who uses Lobbyshop — clients and shop owners.
           </p>
         </Section>
 
@@ -58,14 +58,14 @@ export function PrivacyPolicy() {
               the check-in details you submit (name, phone, service, ETA).
             </li>
             <li>
-              <strong className="text-bone">With service providers</strong> who help us operate Lobby — our
+              <strong className="text-bone">With service providers</strong> who help us operate Lobbyshop — our
               database/authentication provider, our mapping/address-lookup provider, and our hosting provider.
               These providers only receive what they need to perform their function and aren't permitted to use
               your data for their own purposes.
             </li>
             <li>
               <strong className="text-bone">If required by law</strong>, or to protect the rights, safety, and
-              property of Lobby, our users, or the public.
+              property of Lobbyshop, our users, or the public.
             </li>
           </ul>
           <p className="mt-2">We don't sell your personal information.</p>
@@ -98,7 +98,7 @@ export function PrivacyPolicy() {
 
         <Section title="8. Children's privacy">
           <p>
-            Lobby isn't directed at children under 13, and we don't knowingly collect information from them. If
+            Lobbyshop isn't directed at children under 13, and we don't knowingly collect information from them. If
             you believe a child has created an account, contact us and we'll remove it.
           </p>
         </Section>
@@ -112,14 +112,13 @@ export function PrivacyPolicy() {
 
         <Section title="10. Contact">
           <p>
-            Questions about this Privacy Policy, or want to request your data be deleted? Reach out to the email
-            associated with the Lobby account that manages this platform.
+            Questions about this Privacy Policy, or want to request your data be deleted? Reach out to <a href="mailto:iceemtz3@gmail.com" className="text-brand hover:underline">iceemtz3@gmail.com</a>.
           </p>
         </Section>
       </div>
 
       <Link to="/" className="mt-10 inline-block text-sm text-brandBright hover:underline">
-        ← Back to Lobby
+        ← Back to Lobbyshop
       </Link>
     </div>
   )

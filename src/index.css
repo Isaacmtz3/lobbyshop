@@ -9,14 +9,17 @@
   --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, system-ui, sans-serif;
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, sans-serif;
 
-  --color-void: #060607;
-  --color-panel: #0f0f12;
-  --color-panel2: #17171b;
-  --color-line: #ffffff14;
-  --color-bone: #f2f0ea;
-  --color-mute: #8a8a90;
+  /* Light theme, app-wide: the landing page's blue-and-white look, everywhere.
+     The old dark values live on .theme-dark below — the shop TV display
+     (ShopDisplay) opts back into them, because it's a TV screen. */
+  --color-void: #f5f7fa;
+  --color-panel: #ffffff;
+  --color-panel2: #f8fafc;
+  --color-line: #e5e7eb;
+  --color-bone: #1c1c1e;
+  --color-mute: #6b7280;
 
-  /* Lobby platform accent (distinct from any individual shop's accent_color) */
+  /* Lobbyshop platform accent (distinct from any individual shop's accent_color) */
   --color-brand: #2f6fed;
   --color-brandBright: #5b8ef5;
 
@@ -24,6 +27,17 @@
   --color-amber: #f5a623;
   --color-crimson: #e8392e;
   --color-crimsonBright: #ff5a46;
+}
+
+/* Dark theme, scoped: wrap a subtree in this and every token class inside
+   renders the old dark palette again. Used only by the shop TV display. */
+.theme-dark {
+  --color-void: #060607;
+  --color-panel: #0f0f12;
+  --color-panel2: #17171b;
+  --color-line: #ffffff14;
+  --color-bone: #f2f0ea;
+  --color-mute: #8a8a90;
 }
 
 * {

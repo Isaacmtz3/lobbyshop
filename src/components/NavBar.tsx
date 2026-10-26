@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { BarberPole } from './BarberPole'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -18,25 +19,27 @@ export function NavBar() {
   // Each role gets its own, deliberately short, set of links — a shop
   // owner doesn't need "browse shops" cluttering their bar.
   const roleLinks = (() => {
-    if (!user) return [{ to: '/browse', label: 'Lobby' }]
+    if (!user) return [{ to: '/browse', label: 'Browse shops' }]
     switch (profile?.role) {
       case 'shop_owner':
         return [{ to: '/owner', label: 'My shop' }]
       case 'admin':
         return [
-          { to: '/browse', label: 'Lobby' },
+          { to: '/browse', label: 'Browse shops' },
+          { to: '/owner', label: 'My shop' },
           { to: '/command-center', label: 'Command Center' },
         ]
       default:
-        return [{ to: '/browse', label: 'Lobby' }]
+        return [{ to: '/browse', label: 'Browse shops' }]
     }
   })()
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-void/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-        <Link to="/" className="font-display text-xl font-bold tracking-tight text-bone" onClick={() => setMenuOpen(false)}>
-          Lobby
+        <Link to="/" className="flex items-center gap-2" onClick={() => setMenuOpen(false)}>
+          <BarberPole className="h-10 w-4" />
+          <span className="font-display text-xl font-bold tracking-tight text-brand">Lobbyshop</span>
         </Link>
 
         <nav className="hidden items-center gap-2 text-sm sm:flex">
@@ -53,7 +56,7 @@ export function NavBar() {
               </Link>
               <Link
                 to="/signup"
-                className="rounded bg-brand px-4 py-2 font-medium text-bone transition-colors hover:bg-brandBright"
+                className="rounded bg-brand px-4 py-2 font-medium text-white transition-colors hover:bg-brandBright"
               >
                 Sign up
               </Link>
@@ -91,7 +94,7 @@ export function NavBar() {
               </Link>
               <Link
                 to="/signup"
-                className="rounded bg-brand px-3 py-2 text-center font-medium text-bone"
+                className="rounded bg-brand px-3 py-2 text-center font-medium text-white"
                 onClick={() => setMenuOpen(false)}
               >
                 Sign up

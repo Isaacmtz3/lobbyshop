@@ -74,7 +74,7 @@ export function ShopDisplay() {
 
   if (!shop) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-void px-5 text-center text-mute">
+      <div className="theme-dark flex min-h-screen items-center justify-center bg-void px-5 text-center text-mute">
         We couldn't find a shop at this link.
       </div>
     )
@@ -85,7 +85,7 @@ export function ShopDisplay() {
   const barberName = (id: string | null) => barbers.find((b) => b.id === id)?.name ?? null
 
   return (
-    <div className="min-h-screen bg-void px-10 py-8">
+    <div className="theme-dark min-h-screen bg-void px-10 py-8">
       <div className="mb-10 flex items-center justify-between gap-5">
         <div className="flex items-center gap-5">
           <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl bg-panel2">

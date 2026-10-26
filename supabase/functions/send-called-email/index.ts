@@ -7,7 +7,7 @@
 //
 // Secrets (set in the Supabase dashboard, never in the repo or chat):
 //   RESEND_API_KEY   — Resend API key
-//   CALLED_EMAIL_FROM — verified sender, e.g. "Lobby <hello@yourdomain.com>"
+//   CALLED_EMAIL_FROM — verified sender, e.g. "Lobbyshop <hello@yourdomain.com>"
 // Supabase provides SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY automatically.
 //
 // Recipient resolution:

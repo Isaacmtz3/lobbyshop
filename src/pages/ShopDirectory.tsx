@@ -91,14 +91,14 @@ export function ShopDirectory() {
   return (
     <div className="mx-auto max-w-6xl px-5 py-10">
       <div className="mb-10">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-brandBright">The Lobby</p>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-brandBright">Lobbyshop</p>
         <h1 className="font-display text-3xl font-bold text-bone sm:text-4xl">
           Find your shop,
           <br />
           <span className="text-brandBright">skip the wait.</span>
         </h1>
         <p className="mt-3 max-w-lg text-mute">
-          Every barbershop on Lobby, real wait times, and a check-in before you even walk in the
+          Every barbershop on Lobbyshop, real wait times, and a check-in before you even walk in the
           door.
         </p>
 
@@ -127,7 +127,7 @@ export function ShopDirectory() {
 
       {!loading && shops.length === 0 && (
         <div className="rounded-md border border-line bg-panel p-8 text-center text-mute">
-          No shops have joined Lobby yet.{' '}
+          No shops have joined Lobbyshop yet.{' '}
           <Link to="/signup" className="text-brandBright hover:underline">
             Sign up your shop
           </Link>{' '}

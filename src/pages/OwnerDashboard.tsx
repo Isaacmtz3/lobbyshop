@@ -391,7 +391,7 @@ function QueueTab({
         <button
           onClick={handleAddWalkIn}
           disabled={walkInSaving || !walkInName.trim()}
-          className="mt-4 rounded bg-brand px-4 py-2.5 text-sm font-medium text-bone transition-colors hover:bg-brandBright disabled:opacity-40"
+          className="mt-4 rounded bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
         >
           {walkInSaving ? 'Adding…' : 'Add to queue'}
         </button>
@@ -557,7 +557,7 @@ function BarbersTab({ shopId, barbers, onChange }: { shopId: string; barbers: Ba
         <button
           onClick={addBarber}
           disabled={adding}
-          className="rounded bg-brand px-4 py-2.5 text-sm font-medium text-bone transition-colors hover:bg-brandBright disabled:opacity-40"
+          className="rounded bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
         >
           Add
         </button>
@@ -709,7 +709,7 @@ function ServicesTab({
         <button
           onClick={addService}
           disabled={adding}
-          className="rounded bg-brand px-4 py-2.5 text-sm font-medium text-bone transition-colors hover:bg-brandBright disabled:opacity-40"
+          className="rounded bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
         >
           Add
         </button>
@@ -1013,7 +1013,7 @@ function SettingsTab({ shop, onShopUpdated }: { shop: Shop; onShopUpdated: (shop
         <button
           onClick={save}
           disabled={saving}
-          className="rounded bg-brand px-4 py-2.5 text-sm font-medium text-bone transition-colors hover:bg-brandBright disabled:opacity-40"
+          className="rounded bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
         >
           {saving ? 'Saving…' : 'Save changes'}
         </button>
@@ -1048,7 +1048,7 @@ function LaunchLink({ label, description, path }: { label: string; description: 
           href={path}
           target="_blank"
           rel="noreferrer"
-          className="rounded bg-brand px-3 py-1.5 text-xs font-medium text-bone hover:bg-brandBright"
+          className="rounded bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brandBright"
         >
           Open
         </a>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { BarberPole } from '../components/BarberPole'
 import { supabase } from '../lib/supabase'
 import type { Shop, ShopQueueStats } from '../types'
 
@@ -138,43 +139,6 @@ function BarberChairIllustration() {
 
 /** Glossy, chrome-capped barber pole — a detailed illustration rather than
  * a flat striped bar, matching a classic storefront barber-pole look. */
-function BarberPole({ className = 'h-16 w-7' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 100 260" className={`${className} shrink-0 drop-shadow-[0_2px_3px_rgba(0,0,0,0.25)]`}>
-      <defs>
-        <linearGradient id="chrome" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#f8fafc" />
-          <stop offset="35%" stopColor="#cbd5e1" />
-          <stop offset="65%" stopColor="#94a3b8" />
-          <stop offset="100%" stopColor="#e2e8f0" />
-        </linearGradient>
-        <pattern id="poleStripes" width="30" height="30" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-          <rect width="30" height="30" fill="#ffffff" />
-          <rect width="11" height="30" fill="#e8392e" />
-          <rect x="19" width="11" height="30" fill="#2f6fed" />
-        </pattern>
-        <clipPath id="bodyClip">
-          <rect x="21" y="52" width="58" height="156" rx="27" />
-        </clipPath>
-      </defs>
-
-      {/* body */}
-      <rect x="21" y="52" width="58" height="156" rx="27" fill="url(#poleStripes)" stroke="#0f172a" strokeWidth="5" />
-      <rect x="30" y="58" width="13" height="144" rx="6.5" fill="#ffffff" opacity="0.3" clipPath="url(#bodyClip)" />
-
-      {/* top chrome cap + sphere */}
-      <rect x="13" y="36" width="74" height="24" rx="12" fill="url(#chrome)" stroke="#0f172a" strokeWidth="5" />
-      <circle cx="50" cy="26" r="25" fill="url(#chrome)" stroke="#0f172a" strokeWidth="5" />
-      <ellipse cx="40" cy="16" rx="9" ry="6" fill="#ffffff" opacity="0.75" />
-
-      {/* bottom chrome caps */}
-      <rect x="13" y="200" width="74" height="24" rx="12" fill="url(#chrome)" stroke="#0f172a" strokeWidth="5" />
-      <rect x="18" y="221" width="64" height="26" rx="13" fill="url(#chrome)" stroke="#0f172a" strokeWidth="5" />
-      <ellipse cx="34" cy="232" rx="8" ry="5" fill="#ffffff" opacity="0.6" />
-    </svg>
-  )
-}
-
 export function Landing() {
   const navigate = useNavigate()
 
@@ -242,7 +206,7 @@ export function Landing() {
       <header className="sticky top-0 z-30 border-b border-slate-900/5 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-5">
           <div className="flex items-center gap-2">
-            <span className="font-display text-2xl font-extrabold tracking-tight text-brand">Lobby</span>
+            <span className="font-display text-2xl font-extrabold tracking-tight text-brand">Lobbyshop</span>
             <BarberPole />
           </div>
           <div className="flex items-center gap-5">
@@ -377,7 +341,7 @@ export function Landing() {
         </div>
 
         <div className="mt-24 sm:mt-28">
-          <h2 className="text-center font-display text-3xl font-extrabold tracking-tight">How Lobby works</h2>
+          <h2 className="text-center font-display text-3xl font-extrabold tracking-tight">How Lobbyshop works</h2>
           <div className="relative mt-12 grid grid-cols-1 gap-10 sm:grid-cols-3">
             <div className="absolute left-0 right-0 top-7 hidden h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent sm:block" />
             {[
