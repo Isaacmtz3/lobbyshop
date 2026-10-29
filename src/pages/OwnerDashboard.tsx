@@ -7,9 +7,11 @@ import {
   parseShopHours,
 } from '../lib/hours'
 import { fetchShopServices, toServiceOptions } from '../lib/services'
+import { creditVisit } from '../lib/loyalty'
 import type { Barber, Client, QueueEntry, Shop, ShopHours, ShopService } from '../types'
+import { LoyaltyPanel } from './LoyaltyPanel'
 
-type Tab = 'overview' | 'queue' | 'clients' | 'barbers' | 'services' | 'settings'
+type Tab = 'overview' | 'queue' | 'clients' | 'barbers' | 'services' | 'settings' | 'loyalty'
 
 export function OwnerDashboard({
   shop,
@@ -24,6 +26,8 @@ export function OwnerDashboard({
   const [barbers, setBarbers] = useState<Barber[]>([])
   const [services, setServices] = useState<ShopService[]>([])
   const [completedToday, setCompletedToday] = useState(0)
+  const [loyaltyNotice, setLoyaltyNotice] = useState<string | null>(null)
+  const [loyaltyRetryId, setLoyaltyRetryId] = useState<string | null>(null)
 
   async function loadQueue() {
     const { data } = await supabase
@@ -110,6 +114,46 @@ export function OwnerDashboard({
   }
   async function completeEntry(id: string) {
     await supabase.from('queue').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id)
+    // Loyalty credit is deliberately best-effort and separate: the visit
+    // is completed whether or not points land. The RPC itself re-checks
+    // that the row is completed and that the caller is shop staff, and it
+    // credits at most once per queue entry (unique index), so a retry
+    // can never double-credit. A failure here (e.g. the loyalty
+    // migration has not been applied yet) is shown with a Retry button,
+    // not hidden — and "no credit" is also the correct outcome when
+    // loyalty is off, in which case the RPC simply returns [].
+    try {
+      const credited = await creditVisit(id)
+      setLoyaltyRetryId(null)
+      if (credited.length > 0) {
+        setLoyaltyNotice(
+          `Loyalty: ${credited.map((c) => `${c.kind === 'welcome_bonus' ? 'welcome bonus' : 'visit'} +${c.points}`).join(', ')} pts credited.`,
+        )
+      } else {
+        setLoyaltyNotice(null)
+      }
+    } catch (e) {
+      setLoyaltyNotice(
+        `Visit completed, but loyalty points were not recorded: ${e instanceof Error ? e.message : 'loyalty unavailable'}.`,
+      )
+      setLoyaltyRetryId(id)
+    }
+  }
+  async function retryLoyaltyCredit() {
+    if (!loyaltyRetryId) return
+    try {
+      const credited = await creditVisit(loyaltyRetryId)
+      setLoyaltyRetryId(null)
+      setLoyaltyNotice(
+        credited.length > 0
+          ? `Loyalty: ${credited.map((c) => `${c.kind === 'welcome_bonus' ? 'welcome bonus' : 'visit'} +${c.points}`).join(', ')} pts credited.`
+          : 'Loyalty: no points were due for that visit.',
+      )
+    } catch (e) {
+      setLoyaltyNotice(
+        `Loyalty credit still failed: ${e instanceof Error ? e.message : 'loyalty unavailable'}.`,
+      )
+    }
   }
   async function removeEntry(id: string) {
     await supabase.from('queue').delete().eq('id', id)
@@ -128,6 +172,7 @@ export function OwnerDashboard({
               ['barbers', 'Barbers'],
               ['services', 'Services'],
               ['settings', 'Settings'],
+              ['loyalty', 'Loyalty'],
             ] as [Tab, string][]
           ).map(([key, label]) => (
             <button
@@ -145,6 +190,17 @@ export function OwnerDashboard({
       </aside>
 
       <main className="min-w-0 flex-1">
+        {loyaltyNotice && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-line bg-panel px-4 py-3 text-sm text-mute">
+            <span>{loyaltyNotice}</span>
+            {loyaltyRetryId && (
+              <button onClick={retryLoyaltyCredit} className="text-sm text-brandBright hover:underline">
+                Retry loyalty credit
+              </button>
+            )}
+          </div>
+        )}
+        {tab === 'loyalty' && <LoyaltyPanel shop={shop} />}
         {tab === 'overview' && (
           <OverviewTab
             waiting={waiting.length}

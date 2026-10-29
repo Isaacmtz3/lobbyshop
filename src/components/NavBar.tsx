@@ -30,7 +30,10 @@ export function NavBar() {
           { to: '/command-center', label: 'Command Center' },
         ]
       default:
-        return [{ to: '/browse', label: 'Browse shops' }]
+        return [
+          { to: '/dashboard', label: 'My dashboard' },
+          { to: '/browse', label: 'Browse shops' },
+        ]
     }
   })()
 

@@ -12,8 +12,17 @@ import {
 } from '../lib/hours'
 import { fetchShopServices, formatPriceCents, toServiceOptions } from '../lib/services'
 import {
+  balanceFor,
+  fetchFavorites,
+  fetchMyLedger,
+  fetchShopLoyalty,
+  toggleFavorite,
+} from '../lib/loyalty'
+import {
   ETA_OPTIONS,
   type Barber,
+  type LoyaltyReward,
+  type LoyaltySettings,
   type MyQueuePosition,
   type Shop,
   type ShopQueueStats,
@@ -42,6 +51,11 @@ export function ShopDetail() {
   const [checkingIn, setCheckingIn] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [servicesOpen, setServicesOpen] = useState(false)
+
+  const [isFavorite, setIsFavorite] = useState(false)
+  const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
+  const [loyaltyRewards, setLoyaltyRewards] = useState<LoyaltyReward[]>([])
+  const [myPoints, setMyPoints] = useState<number | null>(null)
 
 
   async function loadStats(shopId: string) {
@@ -130,6 +144,35 @@ export function ShopDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shop?.id, user?.id])
 
+  // Favorites + this shop's loyalty program. Kept separate from the main
+  // load so a missing loyalty migration never breaks the shop page.
+  useEffect(() => {
+    if (!shop) return
+    fetchShopLoyalty(shop.id)
+      .then(({ settings, rewards }) => {
+        setLoyaltySettings(settings)
+        setLoyaltyRewards(rewards)
+      })
+      .catch(() => {})
+    if (!user) {
+      setIsFavorite(false)
+      setMyPoints(null)
+      return
+    }
+    fetchFavorites(user.id)
+      .then((ids) => setIsFavorite(ids.includes(shop.id)))
+      .catch(() => {})
+    fetchMyLedger(user.id)
+      .then((ledger) => setMyPoints(balanceFor(ledger, shop.id)))
+      .catch(() => {})
+  }, [shop?.id, user?.id])
+
+  async function handleToggleFavorite() {
+    if (!shop || !user) return
+    await toggleFavorite(user.id, shop.id, isFavorite)
+    setIsFavorite(!isFavorite)
+  }
+
   // When the live menu arrives, point the picker at a real service instead
   // of the generic fallback default.
   useEffect(() => {
@@ -210,8 +253,34 @@ export function ShopDetail() {
             <span className="font-display text-2xl font-bold text-mute">{shop.name.slice(0, 1)}</span>
           )}
         </div>
-        <div>
-          <h1 className="font-display text-2xl font-bold text-bone">{shop.name}</h1>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-2xl font-bold text-bone">{shop.name}</h1>
+            {user ? (
+              <button
+                type="button"
+                onClick={handleToggleFavorite}
+                aria-label={isFavorite ? `Remove ${shop.name} from favorites` : `Favorite ${shop.name}`}
+                title={isFavorite ? 'Favorited' : 'Add to favorites'}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-lg ${
+                  isFavorite
+                    ? 'border-amber bg-amber/10 text-amber'
+                    : 'border-line bg-panel text-mute hover:text-amber'
+                }`}
+              >
+                {isFavorite ? '★' : '☆'}
+              </button>
+            ) : (
+              <Link
+                to={`/login?next=/shop/${shop.slug}`}
+                aria-label={`Favorite ${shop.name} (sign in first)`}
+                title="Sign in to favorite this shop"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-panel text-lg text-mute hover:text-amber"
+              >
+                ☆
+              </Link>
+            )}
+          </div>
           {shop.address && <p className="text-sm text-mute">{shop.address}</p>}
           {shop.city && <p className="text-sm text-mute">{shop.city}</p>}
           {shop.phone && (
@@ -242,6 +311,63 @@ export function ShopDetail() {
           <p className="text-xs uppercase tracking-wider text-mute">Barbers</p>
         </div>
       </div>
+
+      {loyaltySettings?.enabled && (
+        <div className="mb-8 rounded-md border border-line bg-panel p-6">
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <h2 className="font-display text-sm uppercase tracking-wider text-mute">Loyalty at {shop.name}</h2>
+            {myPoints != null && (
+              <span className="font-display text-xl font-bold" style={{ color: shop.accent_color }}>
+                {myPoints} pts
+              </span>
+            )}
+          </div>
+          <p className="mb-4 text-xs text-mute">
+            {loyaltySettings.points_per_visit} pts per completed visit · points never expire
+            {user
+              ? ''
+              : ' · sign in to earn points here'}
+          </p>
+          {loyaltyRewards.length === 0 ? (
+            <p className="text-sm text-mute">Loyalty is on, but this shop has not added rewards yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {loyaltyRewards.map((reward) => {
+                const remaining = myPoints == null ? null : Math.max(0, reward.points_cost - myPoints)
+                const pct =
+                  myPoints == null ? 0 : Math.min(100, Math.round((myPoints / reward.points_cost) * 100))
+                return (
+                  <li key={reward.id}>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="text-bone">{reward.name}</span>
+                      <span className="shrink-0 text-mute">{reward.points_cost} pts</span>
+                    </div>
+                    {myPoints != null && (
+                      <>
+                        <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-panel2">
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${pct}%`, backgroundColor: shop.accent_color }}
+                          />
+                        </div>
+                        <p className="mt-1 text-xs text-mute">
+                          {remaining === 0 ? 'Ready to redeem — see your dashboard' : `${remaining} pts to go`}
+                        </p>
+                      </>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {user && (
+            <p className="mt-4 text-xs text-mute">
+              Redeem from your <Link to="/dashboard" className="text-brandBright hover:underline">dashboard</Link> —
+              the barber confirms it at the desk.
+            </p>
+          )}
+        </div>
+      )}
 
       {isCalled && (
         <div className="mb-8 rounded-md px-6 py-5 text-center" style={{ backgroundColor: shop.accent_color }}>
