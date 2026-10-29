@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import { distanceMiles, formatDistance } from '../lib/geo'
+import { fetchFavorites, toggleFavorite } from '../lib/loyalty'
 import { supabase } from '../lib/supabase'
 import type { Shop, ShopQueueStats } from '../types'
 
 type LocationState = 'idle' | 'locating' | 'granted' | 'denied'
 
 export function ShopDirectory() {
+  const { user } = useAuth()
   const [shops, setShops] = useState<Shop[]>([])
   const [stats, setStats] = useState<Record<string, ShopQueueStats>>({})
+  const [favorites, setFavorites] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
 
   const [locationState, setLocationState] = useState<LocationState>('idle')
@@ -53,6 +57,24 @@ export function ShopDirectory() {
       supabase.removeChannel(channel)
     }
   }, [])
+
+  // Favorites load separately from the directory itself: auth may still
+  // be resolving on first mount, and a failure here (e.g. the loyalty
+  // migration has not been applied yet) must not break the directory.
+  useEffect(() => {
+    if (!user) {
+      setFavorites([])
+      return
+    }
+    fetchFavorites(user.id).then(setFavorites).catch(() => {})
+  }, [user?.id])
+
+  async function handleToggleFavorite(shopId: string) {
+    if (!user) return
+    const isFav = favorites.includes(shopId)
+    await toggleFavorite(user.id, shopId, isFav)
+    setFavorites((prev) => (isFav ? prev.filter((id) => id !== shopId) : [...prev, shopId]))
+  }
 
   function useMyLocation() {
     if (!navigator.geolocation) {
@@ -139,36 +161,53 @@ export function ShopDirectory() {
         {shopsWithDistance.map(({ shop, distance }) => {
           const stat = stats[shop.id]
           const waiting = stat?.waiting_count ?? 0
+          const isFav = favorites.includes(shop.id)
           return (
-            <Link
+            <div
               key={shop.id}
-              to={`/shop/${shop.slug}`}
-              className="group rounded-md border border-line bg-panel p-4 transition-colors hover:border-[var(--shop-accent)]"
+              className="group relative rounded-md border border-line bg-panel p-4 transition-colors hover:border-[var(--shop-accent)]"
               style={{ ['--shop-accent' as string]: shop.accent_color }}
             >
-              <div className="mb-3 flex h-16 w-16 items-center justify-center overflow-hidden rounded-md bg-panel2">
-                {shop.logo_url ? (
-                  <img src={shop.logo_url} alt={shop.name} className="h-full w-full object-cover" />
-                ) : (
-                  <span className="font-display text-xl font-bold text-mute">
-                    {shop.name.slice(0, 1)}
+              {user && (
+                <button
+                  type="button"
+                  onClick={() => handleToggleFavorite(shop.id)}
+                  aria-label={isFav ? `Remove ${shop.name} from favorites` : `Favorite ${shop.name}`}
+                  title={isFav ? 'Favorited' : 'Add to favorites'}
+                  className={`absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border text-base ${
+                    isFav
+                      ? 'border-amber bg-amber/10 text-amber'
+                      : 'border-line bg-panel text-mute hover:text-amber'
+                  }`}
+                >
+                  {isFav ? '★' : '☆'}
+                </button>
+              )}
+              <Link to={`/shop/${shop.slug}`} className="block pr-8">
+                <div className="mb-3 flex h-16 w-16 items-center justify-center overflow-hidden rounded-md bg-panel2">
+                  {shop.logo_url ? (
+                    <img src={shop.logo_url} alt={shop.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="font-display text-xl font-bold text-mute">
+                      {shop.name.slice(0, 1)}
+                    </span>
+                  )}
+                </div>
+                <h3 className="font-display font-semibold text-bone">{shop.name}</h3>
+                <p className="text-xs text-mute">
+                  {distance != null ? formatDistance(distance) : shop.city || ' '}
+                </p>
+                <div className="mt-3 flex items-center gap-1.5 text-xs">
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: waiting > 0 ? shop.accent_color : '#35d07f' }}
+                  />
+                  <span className="text-mute">
+                    {waiting > 0 ? `${waiting} waiting` : 'No wait'}
                   </span>
-                )}
-              </div>
-              <h3 className="font-display font-semibold text-bone">{shop.name}</h3>
-              <p className="text-xs text-mute">
-                {distance != null ? formatDistance(distance) : shop.city || ' '}
-              </p>
-              <div className="mt-3 flex items-center gap-1.5 text-xs">
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ backgroundColor: waiting > 0 ? shop.accent_color : '#35d07f' }}
-                />
-                <span className="text-mute">
-                  {waiting > 0 ? `${waiting} waiting` : 'No wait'}
-                </span>
-              </div>
-            </Link>
+                </div>
+              </Link>
+            </div>
           )
         })}
       </div>
