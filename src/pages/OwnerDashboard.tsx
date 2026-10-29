@@ -102,15 +102,8 @@ export function OwnerDashboard({
       // Email not configured yet — the banner still fires.
     }
   }
-  async function callNext() {
-    const next = waiting[0]
-    if (next) await callEntry(next.id)
-  }
   async function confirmArrived(id: string) {
     await supabase.from('queue').update({ status: 'in_chair' }).eq('id', id)
-  }
-  async function markNoShow(id: string) {
-    await supabase.from('queue').update({ status: 'no_show' }).eq('id', id)
   }
   async function completeEntry(id: string) {
     await supabase.from('queue').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id)
@@ -218,10 +211,8 @@ export function OwnerDashboard({
             inChair={inChair}
             barbers={barbers}
             services={services}
-            onCallNext={callNext}
             onCall={callEntry}
             onConfirmArrived={confirmArrived}
-            onNoShow={markNoShow}
             onComplete={completeEntry}
             onRemove={removeEntry}
             onQueueChanged={loadQueue}
@@ -286,8 +277,8 @@ function OverviewTab({
 
 const CALLED_GRACE_MINUTES = 10
 
-// Generic fallback when a shop hasn't set up its live menu yet. The walk-in
-// picker prefers the shop's own services (see QueueTab's walkInOptions).
+// Generic fallback when a shop hasn't set up its live menu yet. The add-client
+// picker prefers the shop's own services (see QueueTab's addOptions).
 const WALK_IN_SERVICES = ['Haircut', 'Haircut + Beard', 'Beard trim', 'Kids cut']
 
 function expectedArrival(entry: QueueEntry): string {
@@ -303,10 +294,8 @@ function QueueTab({
   inChair,
   barbers,
   services,
-  onCallNext,
   onCall,
   onConfirmArrived,
-  onNoShow,
   onComplete,
   onRemove,
   onQueueChanged,
@@ -317,10 +306,8 @@ function QueueTab({
   inChair: QueueEntry[]
   barbers: Barber[]
   services: ShopService[]
-  onCallNext: () => void
   onCall: (id: string) => void
   onConfirmArrived: (id: string) => void
-  onNoShow: (id: string) => void
   onComplete: (id: string) => void
   onRemove: (id: string) => void
   onQueueChanged: () => void
@@ -335,205 +322,302 @@ function QueueTab({
     return () => clearInterval(t)
   }, [])
 
-  const [walkInName, setWalkInName] = useState('')
-  const [walkInPhone, setWalkInPhone] = useState('')
-  const [walkInService, setWalkInService] = useState(WALK_IN_SERVICES[0])
-  const [walkInBarberId, setWalkInBarberId] = useState('')
-  const [walkInSaving, setWalkInSaving] = useState(false)
-  const [walkInError, setWalkInError] = useState<string | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
+  const [popupEntry, setPopupEntry] = useState<QueueEntry | null>(null)
+  const [addName, setAddName] = useState('')
+  const [addPhone, setAddPhone] = useState('')
+  const [addService, setAddService] = useState(WALK_IN_SERVICES[0])
+  const [addBarberId, setAddBarberId] = useState('')
+  const [addSaving, setAddSaving] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
 
   // Live menu from the shop's services table (generic fallback until set).
-  const walkInOptions = toServiceOptions(
+  const addOptions = toServiceOptions(
     services.filter((s) => s.active),
     WALK_IN_SERVICES,
   )
   useEffect(() => {
-    if (walkInOptions.length > 0 && !walkInOptions.some((o) => o.name === walkInService)) {
-      setWalkInService(walkInOptions[0].name)
+    if (addOptions.length > 0 && !addOptions.some((o) => o.name === addService)) {
+      setAddService(addOptions[0].name)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [services])
 
-  // A walk-in standing at the desk: same queue row the kiosk creates, but
-  // entered by the owner so a dead iPad never blocks the line.
-  async function handleAddWalkIn() {
-    if (!walkInName.trim()) return
-    setWalkInSaving(true)
-    setWalkInError(null)
+  // Close the client popup with Escape.
+  useEffect(() => {
+    if (!popupEntry) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPopupEntry(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [popupEntry])
+
+  // A client at the desk: same queue row the kiosk creates, but entered by
+  // the owner so a dead iPad never blocks the line.
+  async function handleAddClient() {
+    if (!addName.trim()) return
+    setAddSaving(true)
+    setAddError(null)
     const { error: insertError } = await supabase.from('queue').insert({
       shop_id: shopId,
-      client_name: walkInName.trim(),
-      phone: walkInPhone.trim() || null,
-      service: walkInService,
-      barber_id: walkInBarberId || null,
+      client_name: addName.trim(),
+      phone: addPhone.trim() || null,
+      service: addService,
+      barber_id: addBarberId || null,
     })
-    setWalkInSaving(false)
+    setAddSaving(false)
     if (insertError) {
-      setWalkInError(insertError.message)
+      setAddError(insertError.message)
       return
     }
-    setWalkInName('')
-    setWalkInPhone('')
-    setWalkInService(walkInOptions[0]?.name ?? WALK_IN_SERVICES[0])
-    setWalkInBarberId('')
+    setAddName('')
+    setAddPhone('')
+    setAddService(addOptions[0]?.name ?? WALK_IN_SERVICES[0])
+    setAddBarberId('')
+    setAddOpen(false)
     onQueueChanged()
   }
+
+  const allEntries = [...inChair, ...called, ...waiting]
+  const nextId = waiting[0]?.id ?? null
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="font-display text-2xl font-semibold text-bone">Live queue</h1>
         <button
-          onClick={onCallNext}
-          disabled={waiting.length === 0}
-          className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright disabled:opacity-40"
+          onClick={() => setAddOpen((o) => !o)}
+          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright"
         >
-          Call next client {waiting.length > 0 && `(${waiting.length} waiting)`}
+          Add client
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={`h-4 w-4 transition-transform ${addOpen ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          >
+            <path d="m4 6 4 4 4-4" />
+          </svg>
         </button>
       </div>
 
-      <div className="mb-6 rounded-md border border-line bg-panel p-5">
-        <h2 className="mb-4 font-display text-sm uppercase tracking-wider text-mute">Add a walk-in</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Client name</label>
-            <input
-              value={walkInName}
-              onChange={(e) => setWalkInName(e.target.value)}
-              placeholder="Walk-in client"
-              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-            />
+      {addOpen && (
+        <div className="mb-6 rounded-md border border-line bg-panel p-5">
+          <h2 className="mb-4 font-display text-sm uppercase tracking-wider text-mute">Add client</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Client name</label>
+              <input
+                value={addName}
+                onChange={(e) => setAddName(e.target.value)}
+                placeholder="Client name"
+                className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Phone (optional)</label>
+              <input
+                type="tel"
+                value={addPhone}
+                onChange={(e) => setAddPhone(e.target.value)}
+                className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Service</label>
+              <select
+                value={addService}
+                onChange={(e) => setAddService(e.target.value)}
+                className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+              >
+                {addOptions.map((s) => (
+                  <option key={s.name} value={s.name}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Barber (optional)</label>
+              <select
+                value={addBarberId}
+                onChange={(e) => setAddBarberId(e.target.value)}
+                className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+              >
+                <option value="">No preference</option>
+                {barbers.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div>
-            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Phone (optional)</label>
-            <input
-              type="tel"
-              value={walkInPhone}
-              onChange={(e) => setWalkInPhone(e.target.value)}
-              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Service</label>
-            <select
-              value={walkInService}
-              onChange={(e) => setWalkInService(e.target.value)}
-              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-            >
-              {walkInOptions.map((s) => (
-                <option key={s.name} value={s.name}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Barber (optional)</label>
-            <select
-              value={walkInBarberId}
-              onChange={(e) => setWalkInBarberId(e.target.value)}
-              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-            >
-              <option value="">No preference</option>
-              {barbers.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+          {addError && <p className="mt-3 text-sm text-crimsonBright">{addError}</p>}
+          <button
+            onClick={handleAddClient}
+            disabled={addSaving || !addName.trim()}
+            className="mt-4 rounded bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
+          >
+            {addSaving ? 'Adding…' : 'Add to queue'}
+          </button>
+        </div>
+      )}
+
+      {allEntries.length === 0 ? (
+        <p className="rounded-md border border-line bg-panel px-5 py-8 text-center text-mute">
+          No one in the queue.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {allEntries.map((entry, i) => {
+            const minutesAgo = entry.called_at ? (Date.now() - new Date(entry.called_at).getTime()) / 60_000 : 0
+            const stuck = entry.status === 'called' && minutesAgo >= CALLED_GRACE_MINUTES
+            const isNext = entry.id === nextId
+            const statusText =
+              entry.status === 'in_chair'
+                ? 'In chair'
+                : entry.status === 'called'
+                  ? `Called ${Math.round(minutesAgo)}m ago`
+                  : 'Waiting'
+            return (
+              <div
+                key={entry.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setPopupEntry(entry)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setPopupEntry(entry)
+                  }
+                }}
+                className={`flex cursor-pointer items-center gap-4 rounded-md border bg-panel px-4 py-3 transition-colors hover:bg-panel2 ${
+                  stuck ? 'border-amber/50' : 'border-line'
+                }`}
+              >
+                <span className="shrink-0 font-display text-xl font-bold text-mute">
+                  #{entry.position ?? i + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-display text-base font-semibold text-bone">{entry.client_name}</p>
+                  <p className="truncate text-xs text-mute">
+                    {entry.service} · {barberName(entry.barber_id)} ·{' '}
+                    {entry.status === 'in_chair' ? '—' : expectedArrival(entry)}
+                  </p>
+                  <p
+                    className={`text-xs ${
+                      entry.status === 'in_chair' ? 'text-volt' : stuck ? 'text-amber' : 'text-mute'
+                    }`}
+                  >
+                    {statusText}
+                    {stuck && ' ⚠'}
+                  </p>
+                </div>
+                {isNext ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onCall(entry.id)
+                    }}
+                    className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition-colors hover:bg-brandBright"
+                  >
+                    Up Next
+                  </button>
+                ) : (
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-5 w-5 shrink-0 text-mute"
+                    aria-hidden="true"
+                  >
+                    <path d="m6 4 4 4-4 4" />
+                  </svg>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {popupEntry && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          onClick={() => setPopupEntry(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl border border-line bg-panel p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1 flex items-start justify-between gap-3">
+              <h2 className="font-display text-xl font-bold text-bone">{popupEntry.client_name}</h2>
+              <button
+                onClick={() => setPopupEntry(null)}
+                className="text-xl leading-none text-mute hover:text-bone"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            {popupEntry.barber_id && (
+              <p className="mb-5 text-sm text-mute">with {barberName(popupEntry.barber_id)}</p>
+            )}
+            <div className="flex flex-col gap-2">
+              {popupEntry.status === 'waiting' && (
+                <button
+                  onClick={() => {
+                    onCall(popupEntry.id)
+                    setPopupEntry(null)
+                  }}
+                  className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright"
+                >
+                  Serve Now
+                </button>
+              )}
+              {popupEntry.status === 'called' && (
+                <button
+                  onClick={() => {
+                    onConfirmArrived(popupEntry.id)
+                    setPopupEntry(null)
+                  }}
+                  className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright"
+                >
+                  In chair
+                </button>
+              )}
+              {popupEntry.status === 'in_chair' && (
+                <button
+                  onClick={() => {
+                    onComplete(popupEntry.id)
+                    setPopupEntry(null)
+                  }}
+                  className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright"
+                >
+                  Complete
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  onRemove(popupEntry.id)
+                  setPopupEntry(null)
+                }}
+                className="rounded-lg border border-crimson/50 px-4 py-2.5 text-sm font-medium text-crimsonBright transition-colors hover:bg-crimson/10"
+              >
+                Remove
+              </button>
+            </div>
           </div>
         </div>
-        {walkInError && <p className="mt-3 text-sm text-crimsonBright">{walkInError}</p>}
-        <button
-          onClick={handleAddWalkIn}
-          disabled={walkInSaving || !walkInName.trim()}
-          className="mt-4 rounded bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
-        >
-          {walkInSaving ? 'Adding…' : 'Add to queue'}
-        </button>
-      </div>
-
-      <div className="overflow-x-auto rounded-md border border-line bg-panel">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead>
-            <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-mute">
-              <th className="px-5 py-3 font-medium">Client</th>
-              <th className="px-5 py-3 font-medium">Service</th>
-              <th className="px-5 py-3 font-medium">Barber</th>
-              <th className="px-5 py-3 font-medium">Status</th>
-              <th className="px-5 py-3 font-medium">Expected arrival</th>
-              <th className="px-5 py-3 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...inChair, ...called, ...waiting].length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-mute">
-                  No one in the queue.
-                </td>
-              </tr>
-            )}
-            {inChair.map((entry) => (
-              <tr key={entry.id} className="border-b border-line last:border-0">
-                <td className="px-5 py-3 text-bone">{entry.client_name}</td>
-                <td className="px-5 py-3 text-mute">{entry.service}</td>
-                <td className="px-5 py-3 text-mute">{barberName(entry.barber_id)}</td>
-                <td className="px-5 py-3 text-volt">In chair</td>
-                <td className="px-5 py-3 text-mute">—</td>
-                <td className="px-5 py-3 text-right">
-                  <button onClick={() => onComplete(entry.id)} className="text-xs text-brandBright hover:underline">
-                    Complete
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {called.map((entry) => {
-              const minutesAgo = entry.called_at ? (Date.now() - new Date(entry.called_at).getTime()) / 60_000 : 0
-              const stuck = minutesAgo >= CALLED_GRACE_MINUTES
-              return (
-                <tr key={entry.id} className={`border-b border-line last:border-0 ${stuck ? 'bg-amber/5' : ''}`}>
-                  <td className="px-5 py-3 text-bone">{entry.client_name}</td>
-                  <td className="px-5 py-3 text-mute">{entry.service}</td>
-                  <td className="px-5 py-3 text-mute">{barberName(entry.barber_id)}</td>
-                  <td className={`px-5 py-3 ${stuck ? 'text-amber' : 'text-mute'}`}>
-                    Called {Math.round(minutesAgo)}m ago
-                    {stuck && <span className="ml-1">⚠</span>}
-                  </td>
-                  <td className="px-5 py-3 text-mute">{expectedArrival(entry)}</td>
-                  <td className="px-5 py-3 text-right">
-                    <button
-                      onClick={() => onConfirmArrived(entry.id)}
-                      className="mr-3 text-xs text-brandBright hover:underline"
-                    >
-                      They arrived
-                    </button>
-                    <button onClick={() => onNoShow(entry.id)} className="text-xs text-crimsonBright hover:underline">
-                      No-show
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
-            {waiting.map((entry) => (
-              <tr key={entry.id} className="border-b border-line last:border-0">
-                <td className="px-5 py-3 text-bone">{entry.client_name}</td>
-                <td className="px-5 py-3 text-mute">{entry.service}</td>
-                <td className="px-5 py-3 text-mute">{barberName(entry.barber_id)}</td>
-                <td className="px-5 py-3 text-mute">Waiting</td>
-                <td className="px-5 py-3 text-mute">{expectedArrival(entry)}</td>
-                <td className="px-5 py-3 text-right">
-                  <button onClick={() => onCall(entry.id)} className="mr-3 text-xs text-brandBright hover:underline">
-                    Call
-                  </button>
-                  <button onClick={() => onRemove(entry.id)} className="text-xs text-crimsonBright hover:underline">
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      )}
     </div>
   )
 }

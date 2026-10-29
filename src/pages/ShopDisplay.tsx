@@ -102,55 +102,60 @@ export function ShopDisplay() {
         </p>
       </div>
 
-      {called.length > 0 && (
-        <div className="mb-10">
-          <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-mute">Now serving</p>
-          <div className="flex flex-wrap gap-4">
-            {called.map((entry) => (
-              <div
-                key={entry.id}
-                className="rounded-xl border-2 px-8 py-5"
-                style={{ borderColor: shop.accent_color, backgroundColor: `${shop.accent_color}1a` }}
-              >
-                <p className="font-display text-3xl font-bold text-bone">
-                  {entry.display_name}
-                  {barberName(entry.barber_id) && (
-                    <span className="ml-2 align-middle text-sm font-normal text-mute">
-                      with {barberName(entry.barber_id)}
-                    </span>
-                  )}
-                </p>
-                <p className="text-sm text-mute">{entry.service}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div>
-        <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-mute">Waiting</p>
-        {waiting.length === 0 ? (
-          <p className="text-lg text-mute">No one's waiting right now.</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-            {waiting.map((entry) => (
-              <div key={entry.id} className="flex items-center gap-4 rounded-lg border border-line bg-panel px-5 py-4">
-                <span className="font-display text-2xl font-bold" style={{ color: shop.accent_color }}>
-                  #{entry.position}
-                </span>
-                <div>
-                  <p className="font-display text-lg font-semibold text-bone">
+      <div className="flex flex-col gap-10 lg:flex-row">
+        {called.length > 0 && (
+          <div className="lg:w-1/2 lg:shrink-0">
+            <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-mute">Up Next</p>
+            <div className="flex flex-wrap gap-4">
+              {called.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="rounded-xl border-2 px-8 py-5"
+                  style={{ borderColor: shop.accent_color, backgroundColor: `${shop.accent_color}1a` }}
+                >
+                  <p className="font-display text-3xl font-bold text-bone">
                     {entry.display_name}
                     {barberName(entry.barber_id) && (
-                      <span className="ml-1.5 text-xs font-normal text-mute">w/ {barberName(entry.barber_id)}</span>
+                      <span className="ml-2 align-middle text-sm font-normal text-mute">
+                        with {barberName(entry.barber_id)}
+                      </span>
                     )}
                   </p>
-                  <p className="text-xs text-mute">{entry.service}</p>
+                  <p className="text-sm text-mute">{entry.service}</p>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
+
+        <div className={called.length > 0 ? 'min-w-0 flex-1' : 'w-full'}>
+          <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-mute">Waiting</p>
+          {waiting.length === 0 ? (
+            <p className="text-lg text-mute">No one's waiting right now.</p>
+          ) : (
+            <div className="flex max-h-[62vh] flex-col gap-3 overflow-y-auto pr-1">
+              {waiting.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex items-center gap-4 rounded-lg border border-line bg-panel px-5 py-4"
+                >
+                  <span className="font-display text-2xl font-bold" style={{ color: shop.accent_color }}>
+                    #{entry.position}
+                  </span>
+                  <div>
+                    <p className="font-display text-lg font-semibold text-bone">
+                      {entry.display_name}
+                      {barberName(entry.barber_id) && (
+                        <span className="ml-1.5 text-xs font-normal text-mute">w/ {barberName(entry.barber_id)}</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-mute">{entry.service}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
