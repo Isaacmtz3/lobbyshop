@@ -92,8 +92,71 @@ export function OwnerDashboard({
   // remove the client from the live queue immediately, from any position.
   // The send-called-email Edge Function is still deployed but no longer
   // invoked — there is no "call" step left to trigger it.
-  async function completeEntry(id: string) {
+  // Completing a visit also records the client in the shop's Clients list —
+  // this is what makes the Clients tab real. Matched by profile first, then
+  // phone, so repeat visits bump the same record. "Walked out" intentionally
+  // leaves no record (no visit happened).
+  async function upsertClientFromVisit(entry: QueueEntry) {
+    const now = new Date().toISOString()
+    let existing: { id: string; visit_count: number } | null = null
+    if (entry.client_profile_id) {
+      const { data } = await supabase
+        .from('clients')
+        .select('id, visit_count')
+        .eq('shop_id', entry.shop_id)
+        .eq('profile_id', entry.client_profile_id)
+        .maybeSingle()
+      if (data) existing = data
+    }
+    if (!existing && entry.phone) {
+      const { data } = await supabase
+        .from('clients')
+        .select('id, visit_count')
+        .eq('shop_id', entry.shop_id)
+        .eq('phone', entry.phone)
+        .maybeSingle()
+      if (data) existing = data
+    }
+    if (existing) {
+      const { error } = await supabase
+        .from('clients')
+        .update({
+          name: entry.client_name,
+          phone: entry.phone,
+          last_visit: now,
+          visit_count: (existing.visit_count ?? 0) + 1,
+        })
+        .eq('id', existing.id)
+      if (error) throw error
+    } else {
+      const row: Record<string, unknown> = {
+        shop_id: entry.shop_id,
+        profile_id: entry.client_profile_id,
+        name: entry.client_name,
+        phone: entry.phone,
+        visit_count: 1,
+        last_visit: now,
+      }
+      let { error } = await supabase.from('clients').insert(row)
+      if (error && /tier/i.test(error.message)) {
+        // No DB default on tier — fall back to a plain value.
+        row.tier = 'regular'
+        ;({ error } = await supabase.from('clients').insert(row))
+      }
+      if (error) throw error
+    }
+  }
+  async function completeEntry(entry: QueueEntry) {
+    const id = entry.id
     await supabase.from('queue').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id)
+    try {
+      await upsertClientFromVisit(entry)
+      loadClients()
+    } catch (e) {
+      setLoyaltyNotice(
+        `Visit completed, but the client record was not saved: ${e instanceof Error ? e.message : 'unknown error'}.`,
+      )
+    }
     // Loyalty credit is deliberately best-effort and separate: the visit
     // is completed whether or not points land. The RPC itself re-checks
     // that the row is completed and that the caller is shop staff, and it
@@ -201,7 +264,7 @@ export function OwnerDashboard({
             onQueueChanged={loadQueue}
           />
         )}
-        {tab === 'clients' && <ClientsTab clients={clients} />}
+        {tab === 'clients' && <ClientsTab clients={clients} onChange={loadClients} />}
         {tab === 'barbers' && <BarbersTab shopId={shop.id} barbers={barbers} onChange={loadBarbers} />}
         {tab === 'services' && <ServicesTab shopId={shop.id} services={services} onChange={loadServices} />}
         {tab === 'settings' && <SettingsTab shop={shop} onShopUpdated={onShopUpdated} />}
@@ -275,7 +338,7 @@ function QueueTab({
   inChair: QueueEntry[]
   barbers: Barber[]
   services: ShopService[]
-  onComplete: (id: string) => void
+  onComplete: (entry: QueueEntry) => void
   onRemove: (id: string) => void
   onQueueChanged: () => void
 }) {
@@ -543,7 +606,7 @@ function QueueTab({
                   leaves the live queue immediately, from any spot in line. */}
               <button
                 onClick={() => {
-                  onComplete(popupEntry.id)
+                  onComplete(popupEntry)
                   onQueueChanged()
                   setPopupEntry(null)
                 }}
@@ -569,41 +632,106 @@ function QueueTab({
   )
 }
 
-function ClientsTab({ clients }: { clients: Client[] }) {
+function ClientsTab({ clients, onChange }: { clients: Client[]; onChange: () => void }) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  function startEdit(c: Client) {
+    setEditingId(c.id)
+    setEditName(c.name)
+    setEditPhone(c.phone ?? '')
+  }
+
+  async function saveEdit(id: string) {
+    if (!editName.trim()) return
+    setSaving(true)
+    await supabase
+      .from('clients')
+      .update({ name: editName.trim(), phone: editPhone.trim() || null })
+      .eq('id', id)
+    setSaving(false)
+    setEditingId(null)
+    onChange()
+  }
+
+  async function deleteClient(id: string, name: string) {
+    if (!window.confirm(`Delete ${name} from your clients? This can't be undone.`)) return
+    await supabase.from('clients').delete().eq('id', id)
+    onChange()
+  }
+
   return (
     <div>
       <h1 className="mb-6 font-display text-2xl font-semibold text-bone">Clients</h1>
-      <div className="overflow-x-auto rounded-md border border-line bg-panel">
-        <table className="w-full min-w-[640px] text-sm">
-          <thead>
-            <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-mute">
-              <th className="px-5 py-3 font-medium">Name</th>
-              <th className="px-5 py-3 font-medium">Phone</th>
-              <th className="px-5 py-3 font-medium">Visits</th>
-              <th className="px-5 py-3 font-medium">Tier</th>
-              <th className="px-5 py-3 font-medium">Last visit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-mute">
-                  No client records yet.
-                </td>
-              </tr>
-            )}
-            {clients.map((c) => (
-              <tr key={c.id} className="border-b border-line last:border-0">
-                <td className="px-5 py-3 text-bone">{c.name}</td>
-                <td className="px-5 py-3 text-mute">{c.phone ?? '—'}</td>
-                <td className="px-5 py-3 text-mute">{c.visit_count}</td>
-                <td className="px-5 py-3 text-mute">{c.tier}</td>
-                <td className="px-5 py-3 text-mute">{c.last_visit ? new Date(c.last_visit).toLocaleDateString() : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {clients.length === 0 ? (
+        <p className="rounded-md border border-line bg-panel px-5 py-8 text-center text-mute">
+          No client records yet.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {clients.map((c) => (
+            <div key={c.id} className="rounded-md border border-line bg-panel px-4 py-3">
+              {editingId === c.id ? (
+                <div className="flex flex-col gap-2">
+                  <input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Name"
+                    className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+                  />
+                  <input
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="Phone (optional)"
+                    inputMode="tel"
+                    className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEdit(c.id)}
+                      disabled={saving || !editName.trim()}
+                      className="rounded bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
+                    >
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="rounded border border-line px-4 py-2 text-sm text-mute transition-colors hover:text-bone"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-display text-base font-semibold text-bone">{c.name}</p>
+                    <p className="truncate text-xs text-mute">
+                      {c.phone ?? 'No phone'} · {c.visit_count} {c.visit_count === 1 ? 'visit' : 'visits'} ·{' '}
+                      {c.tier}
+                      {c.last_visit ? ` · Last: ${new Date(c.last_visit).toLocaleDateString()}` : ''}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => startEdit(c)}
+                    className="shrink-0 rounded border border-line px-3 py-1.5 text-xs font-medium text-mute transition-colors hover:text-bone"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => deleteClient(c.id, c.name)}
+                    className="shrink-0 rounded px-3 py-1.5 text-xs font-medium text-crimsonBright transition-colors hover:bg-crimson/10"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
