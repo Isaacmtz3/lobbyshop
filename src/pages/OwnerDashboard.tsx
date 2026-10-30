@@ -286,13 +286,13 @@ function OverviewTab({
     <div>
       <h1 className="mb-6 font-display text-2xl font-semibold text-bone">Overview</h1>
       <div className="mb-8 grid grid-cols-2 gap-4">
-        <div className="rounded-md border border-line bg-panel p-5">
+        <div className="rounded-xl border border-line bg-panel p-5 shadow-lg">
           <p className="mb-2 text-xs uppercase tracking-wider text-mute">Waiting</p>
           <p className="font-display text-3xl font-bold" style={{ color: accent }}>
             {waiting}
           </p>
         </div>
-        <div className="rounded-md border border-line bg-panel p-5">
+        <div className="rounded-xl border border-line bg-panel p-5 shadow-lg">
           <p className="mb-2 text-xs uppercase tracking-wider text-mute">Completed today</p>
           <p className="font-display text-3xl font-bold text-bone">{completedToday}</p>
         </div>
@@ -680,13 +680,13 @@ function ClientsTab({ clients, onChange }: { clients: Client[]; onChange: () => 
     <div>
       <h1 className="mb-6 font-display text-2xl font-semibold text-bone">Clients</h1>
       {clients.length === 0 ? (
-        <p className="rounded-md border border-line bg-panel px-5 py-8 text-center text-mute">
+        <p className="rounded-xl border border-line bg-panel px-5 py-8 text-center text-mute shadow-lg">
           No client records yet.
         </p>
       ) : (
         <div className="flex flex-col gap-2">
           {clients.map((c) => (
-            <div key={c.id} className="rounded-md border border-line bg-panel px-4 py-3">
+            <div key={c.id} className="rounded-xl border border-line bg-panel px-4 py-4 shadow-lg">
               {editingId === c.id ? (
                 <div className="flex flex-col gap-2">
                   <input
@@ -719,28 +719,31 @@ function ClientsTab({ clients, onChange }: { clients: Client[]; onChange: () => 
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-display text-base font-semibold text-bone">{c.name}</p>
-                    <p className="truncate text-xs text-mute">
-                      {c.phone ?? 'No phone'} · {c.visit_count} {c.visit_count === 1 ? 'visit' : 'visits'} ·{' '}
-                      {c.tier}
-                      {c.last_visit ? ` · Last: ${new Date(c.last_visit).toLocaleDateString()}` : ''}
-                    </p>
+                <>
+                  <div className="flex items-center gap-3">
+                    <p className="min-w-0 flex-1 font-display text-lg font-bold text-bone">{c.name}</p>
+                    <button
+                      onClick={() => startEdit(c)}
+                      className="shrink-0 rounded border border-line px-3 py-1.5 text-xs font-medium text-mute transition-colors hover:text-bone"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => deleteClient(c.id, c.name)}
+                      className="shrink-0 rounded px-3 py-1.5 text-xs font-medium text-crimsonBright transition-colors hover:bg-crimson/10"
+                    >
+                      Delete
+                    </button>
                   </div>
-                  <button
-                    onClick={() => startEdit(c)}
-                    className="shrink-0 rounded border border-line px-3 py-1.5 text-xs font-medium text-mute transition-colors hover:text-bone"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => deleteClient(c.id, c.name)}
-                    className="shrink-0 rounded px-3 py-1.5 text-xs font-medium text-crimsonBright transition-colors hover:bg-crimson/10"
-                  >
-                    Delete
-                  </button>
-                </div>
+                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-mute">
+                    <span>📞 {c.phone ?? 'No phone'}</span>
+                    <span>
+                      ✂️ {c.visit_count} {c.visit_count === 1 ? 'visit' : 'visits'}
+                    </span>
+                    <span>★ {c.tier}</span>
+                    <span>🕐 Last: {c.last_visit ? new Date(c.last_visit).toLocaleDateString() : '—'}</span>
+                  </div>
+                </>
               )}
             </div>
           ))}
@@ -791,11 +794,22 @@ function BarbersTab({ shopId, barbers, onChange }: { shopId: string; barbers: Ba
           Add
         </button>
       </div>
-      <div className="divide-y divide-line rounded-md border border-line bg-panel">
-        {barbers.length === 0 && <p className="px-5 py-8 text-center text-mute">No barbers added yet.</p>}
+      <div className="flex flex-col gap-2">
+        {barbers.length === 0 && (
+          <p className="rounded-xl border border-line bg-panel px-5 py-8 text-center text-mute shadow-lg">
+            No barbers added yet.
+          </p>
+        )}
         {barbers.map((b) => (
-          <div key={b.id} className="flex items-center justify-between px-5 py-3">
-            <span className={b.active ? 'text-bone' : 'text-mute line-through'}>{b.name}</span>
+          <div
+            key={b.id}
+            className="flex items-center justify-between rounded-xl border border-line bg-panel px-4 py-3 shadow-lg"
+          >
+            <span
+              className={`font-display font-bold ${b.active ? 'text-bone' : 'text-mute line-through'}`}
+            >
+              {b.name}
+            </span>
             <div className="flex gap-3 text-xs">
               <button onClick={() => toggleActive(b)} className="text-brandBright hover:underline">
                 {b.active ? 'Deactivate' : 'Activate'}
@@ -944,9 +958,11 @@ function ServicesTab({
         </button>
       </div>
       {error && <p className="mb-4 text-sm text-crimsonBright">{error}</p>}
-      <div className="divide-y divide-line rounded-md border border-line bg-panel">
+      <div className="flex flex-col gap-2">
         {services.length === 0 && (
-          <p className="px-5 py-8 text-center text-mute">No services yet — add your first one above.</p>
+          <p className="rounded-xl border border-line bg-panel px-5 py-8 text-center text-mute shadow-lg">
+            No services yet — add your first one above.
+          </p>
         )}
         {services.map((s) => {
           const d = draftFor(s)
@@ -954,8 +970,15 @@ function ServicesTab({
             Math.round(parseFloat(d.price) * 100) !== s.price_cents ||
             (d.duration.trim() === '' ? null : parseInt(d.duration, 10)) !== s.duration_min
           return (
-            <div key={s.id} className="flex flex-wrap items-center gap-2 px-5 py-3">
-              <span className={`min-w-0 flex-1 text-sm ${s.active ? 'text-bone' : 'text-mute line-through'}`}>
+            <div
+              key={s.id}
+              className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-4 py-3 shadow-lg"
+            >
+              <span
+                className={`min-w-0 flex-1 font-display text-sm font-bold ${
+                  s.active ? 'text-bone' : 'text-mute line-through'
+                }`}
+              >
                 {s.name}
               </span>
               <span className="text-sm text-mute">$</span>

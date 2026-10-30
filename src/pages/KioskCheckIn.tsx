@@ -25,14 +25,21 @@ export function KioskCheckIn() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [totalWaiting, setTotalWaiting] = useState(0)
 
   async function loadWaitingCounts(shopId: string) {
     const { data } = await supabase.rpc('shop_board', { p_shop_id: shopId })
+    const rows = (data as ShopQueueBoardEntry[]) ?? []
     const counts: Record<string, number> = {}
-    for (const row of (data as ShopQueueBoardEntry[]) ?? []) {
-      if (row.status === 'waiting' && row.barber_id) counts[row.barber_id] = (counts[row.barber_id] ?? 0) + 1
+    let total = 0
+    for (const row of rows) {
+      if (row.status === 'waiting') {
+        total++
+        if (row.barber_id) counts[row.barber_id] = (counts[row.barber_id] ?? 0) + 1
+      }
     }
     setWaitingCounts(counts)
+    setTotalWaiting(total)
   }
 
   useEffect(() => {
@@ -142,7 +149,7 @@ export function KioskCheckIn() {
             <span className="font-display text-3xl font-bold text-mute">{shop.name.slice(0, 1)}</span>
           )}
         </div>
-        <h1 className="font-display text-2xl font-bold text-bone">{shop.name}</h1>
+        <h1 className="font-display text-3xl font-bold text-bone">{shop.name}</h1>
         <p className="text-sm text-mute">Check in below to join the queue</p>
       </div>
 
@@ -198,13 +205,30 @@ export function KioskCheckIn() {
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div
+            className="overflow-hidden rounded-2xl border-2 bg-panel shadow-xl"
+            style={{ borderColor: `${shop.accent_color}66` }}
+          >
+            {/* Barber-pole brand strip */}
+            <div
+              className="h-1.5"
+              style={{
+                background:
+                  'repeating-linear-gradient(-45deg, #e63946 0 12px, #f8f9fa 12px 24px, #1d3557 24px 36px)',
+              }}
+            />
+            <div className="space-y-5 p-6 sm:p-8">
+              {totalWaiting > 0 && (
+                <p className="text-center text-sm font-bold text-bone">
+                  🔥 {totalWaiting} in line right now — grab your spot
+                </p>
+              )}
             <div>
-              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Service</label>
+              <label className="mb-2 block font-display text-sm font-bold uppercase tracking-wider text-bone">Service</label>
               <select
                 value={service}
                 onChange={(e) => setService(e.target.value)}
-                className="w-full rounded border border-line bg-panel2 px-3 py-3 text-base text-bone"
+                className="w-full rounded-xl border-2 border-line bg-panel2 px-4 py-4 text-lg font-medium text-bone"
               >
                 {serviceOptions.map((s) => (
                   <option key={s.name} value={s.name}>
@@ -215,41 +239,28 @@ export function KioskCheckIn() {
             </div>
             {barbers.length > 0 && (
               <div>
-                <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">
-                  Pick a barber (optional)
+                <label className="mb-2 block font-display text-sm font-bold uppercase tracking-wider text-bone">
+                  Pick a barber <span className="font-medium normal-case text-mute">(optional)</span>
                 </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setBarberId('')}
-                    className={`rounded border px-3 py-3 text-left transition-colors ${
-                      barberId === '' ? 'border-brand bg-brand/10' : 'border-line bg-panel2'
-                    }`}
-                  >
-                    <p className="text-sm font-medium text-bone">First available</p>
-                    <p className="text-xs text-mute">No preference</p>
-                  </button>
+                <select
+                  value={barberId}
+                  onChange={(e) => setBarberId(e.target.value)}
+                  className="w-full rounded-xl border-2 border-line bg-panel2 px-4 py-4 text-lg font-medium text-bone"
+                >
+                  <option value="">First available — No preference</option>
                   {barbers.map((b) => {
                     const count = waitingCounts[b.id] ?? 0
                     return (
-                      <button
-                        type="button"
-                        key={b.id}
-                        onClick={() => setBarberId(b.id)}
-                        className={`rounded border px-3 py-3 text-left transition-colors ${
-                          barberId === b.id ? 'border-brand bg-brand/10' : 'border-line bg-panel2'
-                        }`}
-                      >
-                        <p className="text-sm font-medium text-bone">{b.name}</p>
-                        <p className="text-xs text-mute">{count > 0 ? `${count} waiting` : 'No wait'}</p>
-                      </button>
+                      <option key={b.id} value={b.id}>
+                        {b.name} — {count > 0 ? `${count} waiting` : 'No wait'}
+                      </option>
                     )
                   })}
-                </div>
+                </select>
               </div>
             )}
             <div>
-              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">
+              <label className="mb-2 block font-display text-sm font-bold uppercase tracking-wider text-bone">
                 When will you arrive?
               </label>
               <div className="grid grid-cols-3 gap-2">
@@ -258,7 +269,7 @@ export function KioskCheckIn() {
                     key={mins}
                     type="button"
                     onClick={() => setEtaMinutes(mins)}
-                    className={`rounded border px-3 py-3 text-base font-medium transition-colors ${
+                    className={`rounded-xl border-2 px-3 py-4 text-lg font-bold transition-colors ${
                       etaMinutes === mins ? 'border-brand bg-brand/10 text-bone' : 'border-line bg-panel2 text-mute'
                     }`}
                   >
@@ -271,11 +282,12 @@ export function KioskCheckIn() {
             <button
               onClick={handleCheckIn}
               disabled={submitting}
-              className="w-full rounded px-4 py-3 text-base font-medium text-bone transition-colors disabled:opacity-40"
+              className="w-full rounded-xl px-4 py-4 text-lg font-bold text-bone shadow-lg transition-transform active:scale-[0.99] disabled:opacity-40"
               style={{ backgroundColor: shop.accent_color }}
             >
               {submitting ? 'Checking in…' : 'Check in'}
             </button>
+            </div>
           </div>
         )}
       </div>
