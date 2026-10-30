@@ -85,26 +85,13 @@ export function OwnerDashboard({
   const called = queue.filter((q) => q.status === 'called')
   const inChair = queue.filter((q) => q.status === 'in_chair')
 
-  async function callEntry(id: string) {
-    const { data, error } = await supabase
-      .from('queue')
-      .update({ status: 'called', called_at: new Date().toISOString() })
-      .eq('id', id)
-      .select('id')
-      .single()
-    if (error || !data) return
-    // Second channel for "you're called": email. Best-effort on purpose —
-    // the in-app banner is what the client sees first, and a missing or
-    // not-yet-deployed email function must never break the call itself.
-    try {
-      await supabase.functions.invoke('send-called-email', { body: { queue_id: id } })
-    } catch {
-      // Email not configured yet — the banner still fires.
-    }
-  }
-  async function confirmArrived(id: string) {
-    await supabase.from('queue').update({ status: 'in_chair' }).eq('id', id)
-  }
+  // NOTE (2026-10-30): the old waiting -> called -> in_chair pipeline is gone.
+  // Isaac's call: one tap finishes the job. Tapping a client offers exactly
+  // two choices — "In chair" (served: completed visit, Clients section,
+  // loyalty points) or "Walked out" (removed, no visit recorded). Both
+  // remove the client from the live queue immediately, from any position.
+  // The send-called-email Edge Function is still deployed but no longer
+  // invoked — there is no "call" step left to trigger it.
   async function completeEntry(id: string) {
     await supabase.from('queue').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id)
     // Loyalty credit is deliberately best-effort and separate: the visit
@@ -197,8 +184,6 @@ export function OwnerDashboard({
         {tab === 'overview' && (
           <OverviewTab
             waiting={waiting.length}
-            called={called.length}
-            inChair={inChair.length}
             completedToday={completedToday}
             accent={shop.accent_color}
           />
@@ -211,8 +196,6 @@ export function OwnerDashboard({
             inChair={inChair}
             barbers={barbers}
             services={services}
-            onCall={callEntry}
-            onConfirmArrived={confirmArrived}
             onComplete={completeEntry}
             onRemove={removeEntry}
             onQueueChanged={loadQueue}
@@ -229,34 +212,22 @@ export function OwnerDashboard({
 
 function OverviewTab({
   waiting,
-  called,
-  inChair,
   completedToday,
   accent,
 }: {
   waiting: number
-  called: number
-  inChair: number
   completedToday: number
   accent: string
 }) {
   return (
     <div>
       <h1 className="mb-6 font-display text-2xl font-semibold text-bone">Overview</h1>
-      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-4">
         <div className="rounded-md border border-line bg-panel p-5">
           <p className="mb-2 text-xs uppercase tracking-wider text-mute">Waiting</p>
           <p className="font-display text-3xl font-bold" style={{ color: accent }}>
             {waiting}
           </p>
-        </div>
-        <div className="rounded-md border border-line bg-panel p-5">
-          <p className="mb-2 text-xs uppercase tracking-wider text-mute">Called</p>
-          <p className="font-display text-3xl font-bold text-amber">{called}</p>
-        </div>
-        <div className="rounded-md border border-line bg-panel p-5">
-          <p className="mb-2 text-xs uppercase tracking-wider text-mute">In chair</p>
-          <p className="font-display text-3xl font-bold text-volt">{inChair}</p>
         </div>
         <div className="rounded-md border border-line bg-panel p-5">
           <p className="mb-2 text-xs uppercase tracking-wider text-mute">Completed today</p>
@@ -266,9 +237,9 @@ function OverviewTab({
       <div className="rounded-md border border-line bg-panel p-5">
         <h2 className="mb-4 font-display text-sm uppercase tracking-wider text-mute">Right now</h2>
         <p className="text-sm text-mute">
-          {waiting + called + inChair === 0
+          {waiting === 0
             ? "Shop's quiet — no one checked in."
-            : `${waiting} waiting, ${called} called, ${inChair} in the chair.`}
+            : `${waiting} in line.`}
         </p>
       </div>
     </div>
@@ -294,8 +265,6 @@ function QueueTab({
   inChair,
   barbers,
   services,
-  onCall,
-  onConfirmArrived,
   onComplete,
   onRemove,
   onQueueChanged,
@@ -306,8 +275,6 @@ function QueueTab({
   inChair: QueueEntry[]
   barbers: Barber[]
   services: ShopService[]
-  onCall: (id: string) => void
-  onConfirmArrived: (id: string) => void
   onComplete: (id: string) => void
   onRemove: (id: string) => void
   onQueueChanged: () => void
@@ -380,7 +347,9 @@ function QueueTab({
   }
 
   const allEntries = [...inChair, ...called, ...waiting]
-  const nextId = waiting[0]?.id ?? null
+  // The first person on the list is always Up Next until the owner taps
+  // "In chair" or "Walked out" — then the next in line moves up.
+  const nextId = allEntries[0]?.id ?? null
 
   return (
     <div>
@@ -520,15 +489,11 @@ function QueueTab({
                   </p>
                 </div>
                 {isNext ? (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onCall(entry.id)
-                    }}
-                    className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition-colors hover:bg-brandBright"
-                  >
+                  // Label only — tapping it opens the same popup as the rest
+                  // of the card, where "In chair" / "Walked out" finishes it.
+                  <span className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white">
                     Up Next
-                  </button>
+                  </span>
                 ) : (
                   <svg
                     viewBox="0 0 16 16"
@@ -572,47 +537,29 @@ function QueueTab({
               <p className="mb-5 text-sm text-mute">with {barberName(popupEntry.barber_id)}</p>
             )}
             <div className="flex flex-col gap-2">
-              {popupEntry.status === 'waiting' && (
-                <button
-                  onClick={() => {
-                    onCall(popupEntry.id)
-                    setPopupEntry(null)
-                  }}
-                  className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright"
-                >
-                  Serve Now
-                </button>
-              )}
-              {popupEntry.status === 'called' && (
-                <button
-                  onClick={() => {
-                    onConfirmArrived(popupEntry.id)
-                    setPopupEntry(null)
-                  }}
-                  className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright"
-                >
-                  In chair
-                </button>
-              )}
-              {popupEntry.status === 'in_chair' && (
-                <button
-                  onClick={() => {
-                    onComplete(popupEntry.id)
-                    setPopupEntry(null)
-                  }}
-                  className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright"
-                >
-                  Complete
-                </button>
-              )}
+              {/* One tap finishes the job: "In chair" records the served
+                  visit (Clients section + loyalty points); "Walked out"
+                  removes them with no visit recorded. Either way the client
+                  leaves the live queue immediately, from any spot in line. */}
+              <button
+                onClick={() => {
+                  onComplete(popupEntry.id)
+                  onQueueChanged()
+                  setPopupEntry(null)
+                }}
+                className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright"
+              >
+                In chair
+              </button>
               <button
                 onClick={() => {
                   onRemove(popupEntry.id)
+                  onQueueChanged()
                   setPopupEntry(null)
                 }}
                 className="rounded-lg border border-crimson/50 px-4 py-2.5 text-sm font-medium text-crimsonBright transition-colors hover:bg-crimson/10"
               >
-                Remove
+                Walked out
               </button>
             </div>
           </div>
