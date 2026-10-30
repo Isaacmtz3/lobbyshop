@@ -12,7 +12,7 @@ const ALREADY_IN_QUEUE_MESSAGE =
 
 export function KioskCheckIn() {
   const { slug } = useParams<{ slug: string }>()
-  const { user, profile, signOut } = useAuth()
+  const { user, profile, signOut, loading: authLoading } = useAuth()
   const [shop, setShop] = useState<Shop | null>(null)
   const [barbers, setBarbers] = useState<Barber[]>([])
   const [services, setServices] = useState<ShopService[]>([])
@@ -27,9 +27,7 @@ export function KioskCheckIn() {
   const [success, setSuccess] = useState(false)
   const [totalWaiting, setTotalWaiting] = useState(0)
 
-  async function loadWaitingCounts(shopId: string) {
-    const { data } = await supabase.rpc('shop_board', { p_shop_id: shopId })
-    const rows = (data as ShopQueueBoardEntry[]) ?? []
+  function applyBoardRows(rows: ShopQueueBoardEntry[]) {
     const counts: Record<string, number> = {}
     let total = 0
     for (const row of rows) {
@@ -42,21 +40,27 @@ export function KioskCheckIn() {
     setTotalWaiting(total)
   }
 
+  async function loadWaitingCounts(shopId: string) {
+    const { data } = await supabase.rpc('shop_board', { p_shop_id: shopId })
+    applyBoardRows((data as ShopQueueBoardEntry[]) ?? [])
+  }
+
   useEffect(() => {
     if (!slug) return
     async function load() {
       const { data: shopData } = await supabase.from('shops').select('*').eq('slug', slug).maybeSingle()
       setShop((shopData as Shop) ?? null)
       if (shopData) {
-        const { data: barberData } = await supabase
-          .from('barbers')
-          .select('*')
-          .eq('shop_id', shopData.id)
-          .eq('active', true)
-          .order('name')
-        setBarbers((barberData as Barber[]) ?? [])
-        setServices(await fetchShopServices(shopData.id))
-        await loadWaitingCounts(shopData.id)
+        // One batch, not four sequential round-trips.
+        const shopId = (shopData as Shop).id
+        const [barberRes, servicesData, boardRes] = await Promise.all([
+          supabase.from('barbers').select('*').eq('shop_id', shopId).eq('active', true).order('name'),
+          fetchShopServices(shopId),
+          supabase.rpc('shop_board', { p_shop_id: shopId }),
+        ])
+        setBarbers((barberRes.data as Barber[]) ?? [])
+        setServices(servicesData)
+        applyBoardRows((boardRes.data as ShopQueueBoardEntry[]) ?? [])
       }
       setLoading(false)
     }
@@ -120,9 +124,15 @@ export function KioskCheckIn() {
 
 
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#07070c] text-white/60">Loading…</div>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#07070c] text-white/60">
+        <div
+          className="h-10 w-10 animate-spin rounded-full border-2 border-white/15"
+          style={{ borderTopColor: '#e63946' }}
+        />
+        <p className="text-sm font-medium">Setting up the shop…</p>
+      </div>
     )
   }
 
@@ -264,7 +274,7 @@ export function KioskCheckIn() {
             style={{ borderColor: accent, boxShadow: neonCardShadow }}
           >
             <div className="space-y-5 p-6 sm:p-8">
-              {totalWaiting > 0 && (
+              {totalWaiting > 0 ? (
                 <div
                   className="rounded-xl border px-4 py-3 text-center text-sm font-bold text-white"
                   style={{
@@ -275,6 +285,18 @@ export function KioskCheckIn() {
                   }}
                 >
                   🔥 {totalWaiting} in line right now — grab your spot
+                </div>
+              ) : (
+                <div
+                  className="rounded-xl border px-4 py-3 text-center text-sm font-bold text-white"
+                  style={{
+                    backgroundColor: '#0a2e1a',
+                    borderColor: '#22c55e',
+                    boxShadow:
+                      '0 0 16px rgba(34,197,94,.45), inset 0 0 12px rgba(34,197,94,.22)',
+                  }}
+                >
+                  ✅ No line right now — walk straight in!
                 </div>
               )}
             <div>
