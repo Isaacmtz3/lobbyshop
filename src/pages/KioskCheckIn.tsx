@@ -151,18 +151,27 @@ export function KioskCheckIn() {
 
   // Dark neon kiosk theme (barbershop neon-sign look)
   const accent = shop.accent_color
-  const neonCardShadow = `0 0 22px ${accent}59, 0 0 70px ${accent}26, inset 0 1px 0 rgba(255,255,255,.08)`
+  const neonCardShadow = `0 0 14px ${accent}55, 0 0 36px ${accent}22, inset 0 1px 0 rgba(255,255,255,.08)`
   const darkInputShadow = 'inset 0 2px 8px rgba(0,0,0,.65), 0 1px 0 rgba(255,255,255,.07)'
   const labelCls =
     'mb-2 block font-display text-sm font-bold uppercase tracking-wider text-white'
 
   return (
     <div className="relative flex min-h-screen flex-col items-center overflow-hidden bg-[#07070c] px-5 py-10">
-      {/* Neon background glows */}
+      {/* Neon background glows — radial gradients, no blur filters (blurs stall mobile GPUs) */}
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-        <div className="absolute -left-24 top-0 h-96 w-96 rounded-full bg-red-600/25 blur-[120px]" />
-        <div className="absolute -right-24 top-1/3 h-96 w-96 rounded-full bg-blue-600/20 blur-[120px]" />
-        <div className="absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-red-600/15 blur-[100px]" />
+        <div
+          className="absolute -left-32 -top-32 h-[28rem] w-[28rem]"
+          style={{ background: 'radial-gradient(closest-side, rgba(220,38,38,.28), transparent)' }}
+        />
+        <div
+          className="absolute -right-32 top-1/3 h-[28rem] w-[28rem]"
+          style={{ background: 'radial-gradient(closest-side, rgba(37,99,235,.22), transparent)' }}
+        />
+        <div
+          className="absolute -bottom-32 left-1/4 h-[22rem] w-[22rem]"
+          style={{ background: 'radial-gradient(closest-side, rgba(220,38,38,.16), transparent)' }}
+        />
       </div>
 
       <div className="relative mb-8 flex flex-col items-center text-center">
