@@ -142,8 +142,6 @@ export function KioskCheckIn() {
   // Dark neon kiosk theme (barbershop neon-sign look)
   const accent = shop.accent_color
   const neonCardShadow = `0 0 22px ${accent}59, 0 0 70px ${accent}26, inset 0 1px 0 rgba(255,255,255,.08)`
-  const poleStrip =
-    'repeating-linear-gradient(-45deg, #e63946 0 14px, #f5f5f5 14px 28px, #1d4ed8 28px 42px)'
   const darkInputShadow = 'inset 0 2px 8px rgba(0,0,0,.65), 0 1px 0 rgba(255,255,255,.07)'
   const labelCls =
     'mb-2 block font-display text-sm font-bold uppercase tracking-wider text-white'
@@ -156,19 +154,8 @@ export function KioskCheckIn() {
         <div className="absolute -right-24 top-1/3 h-96 w-96 rounded-full bg-blue-600/20 blur-[120px]" />
         <div className="absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-red-600/15 blur-[100px]" />
       </div>
-      {/* Barber poles */}
-      <div
-        className="pointer-events-none absolute bottom-20 left-2 top-24 w-5 rounded-full sm:left-4 sm:w-8"
-        style={{ background: poleStrip, boxShadow: '0 0 22px rgba(230,57,70,.45), 0 0 60px rgba(29,78,216,.25)' }}
-        aria-hidden="true"
-      />
-      <div
-        className="pointer-events-none absolute bottom-20 right-2 top-24 w-5 rounded-full sm:right-4 sm:w-8"
-        style={{ background: poleStrip, boxShadow: '0 0 22px rgba(230,57,70,.45), 0 0 60px rgba(29,78,216,.25)' }}
-        aria-hidden="true"
-      />
 
-      <div className="relative mb-8 flex flex-col items-center px-8 text-center">
+      <div className="relative mb-8 flex flex-col items-center text-center">
         <div
           className="mb-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-[#14141b]"
           style={{ boxShadow: `0 0 18px ${accent}66` }}
@@ -276,8 +263,6 @@ export function KioskCheckIn() {
             className="overflow-hidden rounded-2xl border-2 bg-[#101016]/95"
             style={{ borderColor: accent, boxShadow: neonCardShadow }}
           >
-            {/* Barber-pole brand strip */}
-            <div className="h-2" style={{ background: poleStrip }} />
             <div className="space-y-5 p-6 sm:p-8">
               {totalWaiting > 0 && (
                 <div
