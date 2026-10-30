@@ -68,17 +68,27 @@ export function LoyaltyPanel({ shop }: { shop: Shop }) {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The loyalty tables live behind a migration that hasn't been applied to
+  // the live database yet. When they're missing, PostgREST answers with a
+  // "schema cache" error — translate that into plain words instead.
+  const [tablesMissing, setTablesMissing] = useState(false)
+  const isMissingTable = (e: unknown) =>
+    e != null &&
+    typeof e === 'object' &&
+    ((e as { code?: string }).code === 'PGRST202' ||
+      /schema cache/i.test((e as { message?: string }).message ?? ''))
 
   const [newRewardName, setNewRewardName] = useState('')
   const [newRewardCost, setNewRewardCost] = useState('100')
   const [addingReward, setAddingReward] = useState(false)
 
   async function loadSettings() {
-    const { data } = await supabase
+    const { data, error: loadError } = await supabase
       .from('loyalty_settings')
       .select('*')
       .eq('shop_id', shop.id)
       .maybeSingle()
+    if (loadError && isMissingTable(loadError)) setTablesMissing(true)
     if (data) {
       const s = data as LoyaltySettings
       setSettings({
@@ -120,6 +130,10 @@ export function LoyaltyPanel({ shop }: { shop: Shop }) {
   }, [shop.id])
 
   async function saveSettings(next: typeof settings) {
+    if (tablesMissing) {
+      setError('Loyalty tables aren’t in the database yet — apply the loyalty migration first, then these settings will save.')
+      return
+    }
     setSettings(next)
     setSaving(true)
     setError(null)
@@ -136,7 +150,12 @@ export function LoyaltyPanel({ shop }: { shop: Shop }) {
     )
     setSaving(false)
     if (upsertError) {
-      setError(upsertError.message)
+      if (isMissingTable(upsertError)) {
+        setTablesMissing(true)
+        setError('Loyalty tables aren’t in the database yet — apply the loyalty migration first, then these settings will save.')
+      } else {
+        setError(upsertError.message)
+      }
       return
     }
     setMessage('Loyalty settings saved.')
@@ -213,6 +232,12 @@ export function LoyaltyPanel({ shop }: { shop: Shop }) {
         stops new points and new requests, but never wipes points clients already earned.
       </p>
 
+      {tablesMissing && (
+        <p className="mb-4 rounded-md border border-amber/40 bg-amber/10 px-4 py-3 text-sm text-bone">
+          Loyalty isn’t switched on in the database yet — the points, rewards and ledger tables
+          still need to be created. Nothing here can save until that migration runs.
+        </p>
+      )}
       {error && <p className="mb-4 text-sm text-crimsonBright">{error}</p>}
       {message && <p className="mb-4 text-sm text-volt">{message}</p>}
 

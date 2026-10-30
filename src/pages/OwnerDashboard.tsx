@@ -315,10 +315,10 @@ const CALLED_GRACE_MINUTES = 10
 // picker prefers the shop's own services (see QueueTab's addOptions).
 const WALK_IN_SERVICES = ['Haircut', 'Haircut + Beard', 'Beard trim', 'Kids cut']
 
-function expectedArrival(entry: QueueEntry): string {
+function arrivalTime(entry: QueueEntry): string {
   if (entry.eta_minutes == null) return '—'
   const base = new Date(entry.checked_in_at).getTime() + entry.eta_minutes * 60_000
-  return `${entry.eta_minutes} min (by ${new Date(base).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})`
+  return new Date(base).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
 function QueueTab({
@@ -529,27 +529,41 @@ function QueueTab({
                     setPopupEntry(entry)
                   }
                 }}
-                className={`flex cursor-pointer items-center gap-4 rounded-md border bg-panel px-4 py-3 transition-colors hover:bg-panel2 ${
-                  stuck ? 'border-amber/50' : 'border-line'
+                className={`flex cursor-pointer items-center gap-4 rounded-xl border bg-panel px-4 py-4 shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl ${
+                  isNext ? 'border-brand/70' : stuck ? 'border-amber/50' : 'border-line'
                 }`}
               >
-                <span className="shrink-0 font-display text-xl font-bold text-mute">
+                <span
+                  className={`shrink-0 font-display text-2xl font-bold ${isNext ? 'text-brand' : 'text-mute'}`}
+                >
                   #{entry.position ?? i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-display text-base font-semibold text-bone">{entry.client_name}</p>
+                  <p className="truncate font-display text-lg font-bold text-bone">{entry.client_name}</p>
                   <p className="truncate text-xs text-mute">
-                    {entry.service} · {barberName(entry.barber_id)} ·{' '}
-                    {entry.status === 'in_chair' ? '—' : expectedArrival(entry)}
+                    {entry.service}
+                    {entry.barber_id ? ` · with ${barberName(entry.barber_id)}` : ''}
                   </p>
-                  <p
-                    className={`text-xs ${
-                      entry.status === 'in_chair' ? 'text-volt' : stuck ? 'text-amber' : 'text-mute'
-                    }`}
-                  >
-                    {statusText}
-                    {stuck && ' ⚠'}
-                  </p>
+                  {entry.status === 'waiting' ? (
+                    entry.eta_minutes != null ? (
+                      <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-brand/15 px-3 py-1 text-xs font-semibold text-bone">
+                        ⏱ Arriving in ~{entry.eta_minutes} min · by {arrivalTime(entry)}
+                      </span>
+                    ) : (
+                      <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-volt/15 px-3 py-1 text-xs font-semibold text-volt">
+                        📍 In the shop
+                      </span>
+                    )
+                  ) : (
+                    <p
+                      className={`mt-1 text-xs ${
+                        entry.status === 'in_chair' ? 'text-volt' : stuck ? 'text-amber' : 'text-mute'
+                      }`}
+                    >
+                      {statusText}
+                      {stuck && ' ⚠'}
+                    </p>
+                  )}
                 </div>
                 {isNext ? (
                   // Label only — tapping it opens the same popup as the rest

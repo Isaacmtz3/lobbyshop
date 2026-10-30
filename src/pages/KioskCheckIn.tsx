@@ -178,7 +178,14 @@ export function KioskCheckIn() {
         {success ? (
           <div className="rounded-md border p-8 text-center" style={{ borderColor: shop.accent_color }}>
             <p className="mb-1 font-display text-xl font-bold text-bone">You're checked in!</p>
-            <p className="mb-6 text-sm text-mute">Have a seat — we'll call you when it's your turn.</p>
+            <p className="font-display text-3xl font-bold" style={{ color: shop.accent_color }}>
+              See you in ~{etaMinutes} mins
+            </p>
+            <p className="mb-6 mt-3 text-sm text-mute">
+              {shop.name} got your check-in and is holding your spot.
+              <br />
+              Drive safe — we'll see you soon.
+            </p>
             <button
               onClick={async () => {
                 await signOut()
