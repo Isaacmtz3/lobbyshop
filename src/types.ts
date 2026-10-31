@@ -6,6 +6,8 @@ export interface Profile {
   full_name: string | null
   phone: string | null
   avatar_url: string | null
+  city: string | null
+  state: string | null
   created_at: string
 }
 
@@ -23,6 +25,9 @@ export interface Shop {
   is_active: boolean
   lat: number | null
   lng: number | null
+  // "Walk-ins starting at" price shown on the browse card (cents). NULL =
+  // not set: the card hides the badge.
+  walkin_price_cents: number | null
   // Per-day opening hours (jsonb). NULL = hours not set: the app treats the
   // shop as open and does not block check-in. See src/lib/hours.ts.
   hours: ShopHours | null

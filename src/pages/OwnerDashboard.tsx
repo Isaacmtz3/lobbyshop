@@ -266,7 +266,14 @@ export function OwnerDashboard({
         )}
         {tab === 'clients' && <ClientsTab clients={clients} onChange={loadClients} />}
         {tab === 'barbers' && <BarbersTab shopId={shop.id} barbers={barbers} onChange={loadBarbers} />}
-        {tab === 'services' && <ServicesTab shopId={shop.id} services={services} onChange={loadServices} />}
+        {tab === 'services' && (
+          <ServicesTab
+            shop={shop}
+            services={services}
+            onChange={loadServices}
+            onShopUpdated={onShopUpdated}
+          />
+        )}
         {tab === 'settings' && <SettingsTab shop={shop} onShopUpdated={onShopUpdated} />}
       </main>
     </div>
@@ -826,19 +833,27 @@ function BarbersTab({ shopId, barbers, onChange }: { shopId: string; barbers: Ba
 }
 
 function ServicesTab({
-  shopId,
+  shop,
   services,
   onChange,
+  onShopUpdated,
 }: {
-  shopId: string
+  shop: Shop
   services: ShopService[]
   onChange: () => void
+  onShopUpdated: (shop: Shop) => void
 }) {
   const [name, setName] = useState('')
   const [price, setPrice] = useState('')
   const [duration, setDuration] = useState('')
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // "Walk-ins starting at" price shown on the browse card.
+  const [walkinPrice, setWalkinPrice] = useState(
+    shop.walkin_price_cents != null ? String(shop.walkin_price_cents / 100) : '',
+  )
+  const [walkinSaving, setWalkinSaving] = useState(false)
+  const [walkinMessage, setWalkinMessage] = useState<string | null>(null)
   // Per-row draft edits (price dollars + duration minutes), saved on demand.
   const [drafts, setDrafts] = useState<Record<string, { price: string; duration: string }>>({})
 
@@ -865,7 +880,7 @@ function ServicesTab({
     setAdding(true)
     setError(null)
     const { error: insertError } = await supabase.from('shop_services').insert({
-      shop_id: shopId,
+      shop_id: shop.id,
       name: name.trim(),
       price_cents: priceCents,
       duration_min: durationMin,
@@ -921,6 +936,39 @@ function ServicesTab({
     onChange()
   }
 
+  async function saveWalkinPrice() {
+    const trimmed = walkinPrice.trim()
+    if (trimmed !== '') {
+      const cents = Math.round(parseFloat(trimmed) * 100)
+      if (Number.isNaN(cents) || cents < 0) {
+        setWalkinMessage('Enter a price of $0 or more, or clear the field to hide it.')
+        return
+      }
+    }
+    setWalkinSaving(true)
+    setWalkinMessage(null)
+    const cents = trimmed === '' ? null : Math.round(parseFloat(trimmed) * 100)
+    const { data, error: updateError } = await supabase
+      .from('shops')
+      .update({ walkin_price_cents: cents })
+      .eq('id', shop.id)
+      .select()
+      .single()
+    setWalkinSaving(false)
+    if (updateError) {
+      setWalkinMessage(updateError.message)
+      return
+    }
+    if (data) {
+      onShopUpdated(data as Shop)
+      setWalkinMessage(
+        cents == null
+          ? 'Cleared — the walk-in badge is hidden from your shop card.'
+          : 'Saved — your shop card now shows "Walk-ins from" this price.',
+      )
+    }
+  }
+
   return (
     <div>
       <h1 className="mb-6 font-display text-2xl font-semibold text-bone">Services &amp; prices</h1>
@@ -928,6 +976,31 @@ function ServicesTab({
         This is your shop's live menu — it shows on your shop page and in every check-in picker. Changes take
         effect right away, no redeploy needed.
       </p>
+      <div className="mb-4 rounded-xl border border-line bg-panel p-4 shadow-lg">
+        <p className="font-display text-sm font-bold text-bone">Walk-ins starting at</p>
+        <p className="mb-2 text-xs text-mute">
+          Shows on your shop card in the directory. Leave blank to hide it.
+        </p>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-mute">$</span>
+          <input
+            value={walkinPrice}
+            onChange={(e) => setWalkinPrice(e.target.value)}
+            placeholder="25"
+            inputMode="decimal"
+            aria-label="Walk-in starting price"
+            className="w-28 rounded border border-line bg-panel2 px-2 py-2 text-sm text-bone"
+          />
+          <button
+            onClick={saveWalkinPrice}
+            disabled={walkinSaving}
+            className="rounded bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
+          >
+            {walkinSaving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        {walkinMessage && <p className="mt-2 text-xs text-mute">{walkinMessage}</p>}
+      </div>
       <div className="mb-4 grid gap-2 sm:grid-cols-[1fr_120px_140px_auto]">
         <input
           value={name}
