@@ -51,6 +51,7 @@ export function ShopDetail() {
   const [checkingIn, setCheckingIn] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [servicesOpen, setServicesOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   const [isFavorite, setIsFavorite] = useState(false)
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null)
@@ -204,6 +205,7 @@ export function ShopDetail() {
       setError(insertError.code === '23505' ? ALREADY_IN_QUEUE_MESSAGE : insertError.message)
       return
     }
+    setSheetOpen(false)
     await loadMyPosition(shop.id)
     await loadStats(shop.id)
   }
@@ -216,6 +218,15 @@ export function ShopDetail() {
     await loadMyPosition(shop.id)
     await loadStats(shop.id)
   }
+
+  // Lock body scroll while the check-in sheet is open.
+  useEffect(() => {
+    if (!sheetOpen) return
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [sheetOpen])
 
   if (loading) {
     return <div className="mx-auto max-w-3xl px-5 py-10 text-mute">Loading…</div>
@@ -244,339 +255,436 @@ export function ShopDetail() {
   const serviceOptions = toServiceOptions(services, DEFAULT_SERVICES)
 
   return (
-    <div className="mx-auto max-w-3xl px-5 py-10">
-      <div className="mb-8 flex items-center gap-4">
-        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-panel2">
-          {shop.logo_url ? (
-            <img src={shop.logo_url} alt={shop.name} className="h-full w-full object-cover" />
-          ) : (
-            <span className="font-display text-2xl font-bold text-mute">{shop.name.slice(0, 1)}</span>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-2xl font-bold text-bone">{shop.name}</h1>
-            {user ? (
-              <button
-                type="button"
-                onClick={handleToggleFavorite}
-                aria-label={isFavorite ? `Remove ${shop.name} from favorites` : `Favorite ${shop.name}`}
-                title={isFavorite ? 'Favorited' : 'Add to favorites'}
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-lg ${
-                  isFavorite
-                    ? 'border-amber bg-amber/10 text-amber'
-                    : 'border-line bg-panel text-mute hover:text-amber'
-                }`}
-              >
-                {isFavorite ? '★' : '☆'}
-              </button>
-            ) : (
-              <Link
-                to={`/login?next=/shop/${shop.slug}`}
-                aria-label={`Favorite ${shop.name} (sign in first)`}
-                title="Sign in to favorite this shop"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-panel text-lg text-mute hover:text-amber"
-              >
-                ☆
-              </Link>
-            )}
+    <div className="pb-12">
+      {/* Cover banner */}
+      <div
+        className="h-44 w-full sm:h-56"
+        style={{ background: `linear-gradient(135deg, ${shop.accent_color}b3 0%, #101014 75%)` }}
+      />
+
+      <div className="mx-auto max-w-3xl px-5">
+        {/* Profile card overlapping the cover */}
+        <div className="-mt-16 rounded-2xl border border-line bg-panel p-5 shadow-xl">
+          <div className="flex items-center gap-4">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-panel2">
+              {shop.logo_url ? (
+                <img src={shop.logo_url} alt={shop.name} className="h-full w-full object-cover" />
+              ) : (
+                <span className="font-display text-3xl font-black text-mute">
+                  {shop.name.slice(0, 1)}
+                </span>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h1 className="truncate font-display text-2xl font-black text-bone">{shop.name}</h1>
+                {user ? (
+                  <button
+                    type="button"
+                    onClick={handleToggleFavorite}
+                    aria-label={isFavorite ? `Remove ${shop.name} from favorites` : `Favorite ${shop.name}`}
+                    title={isFavorite ? 'Favorited' : 'Add to favorites'}
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-lg ${
+                      isFavorite
+                        ? 'border-amber bg-amber/10 text-amber'
+                        : 'border-line bg-panel text-mute hover:text-amber'
+                    }`}
+                  >
+                    {isFavorite ? '★' : '☆'}
+                  </button>
+                ) : (
+                  <Link
+                    to={`/login?next=/shop/${shop.slug}`}
+                    aria-label={`Favorite ${shop.name} (sign in first)`}
+                    title="Sign in to favorite this shop"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line bg-panel text-lg text-mute hover:text-amber"
+                  >
+                    ☆
+                  </Link>
+                )}
+              </div>
+              {shop.address && <p className="mt-1 text-sm text-mute">📍 {shop.address}</p>}
+              {shop.city && <p className="text-sm text-mute">{shop.city}</p>}
+              {shop.phone && (
+                <p className="text-sm">
+                  📞{' '}
+                  <a href={`tel:${shop.phone}`} className="font-medium text-brandBright hover:underline">
+                    {shop.phone}
+                  </a>
+                </p>
+              )}
+            </div>
           </div>
-          {shop.address && <p className="text-sm text-mute">{shop.address}</p>}
-          {shop.city && <p className="text-sm text-mute">{shop.city}</p>}
-          {shop.phone && (
-            <p className="text-sm">
-              <a href={`tel:${shop.phone}`} className="text-brandBright hover:underline">
-                {shop.phone}
-              </a>
+        </div>
+
+        {shop.description && (
+          <p className="mt-4 text-sm leading-relaxed text-mute">{shop.description}</p>
+        )}
+
+        {/* Stat cards with icons */}
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          <div className="rounded-2xl border border-line bg-panel p-4 text-center shadow-lg">
+            <p className="font-display text-3xl font-black" style={{ color: shop.accent_color }}>
+              {stats?.waiting_count ?? 0}
             </p>
-          )}
+            <p className="mt-1 text-xs font-bold uppercase tracking-wider text-mute">Waiting</p>
+            <p className="mt-1 text-xl">👥</p>
+          </div>
+          <div className="rounded-2xl border border-line bg-panel p-4 text-center shadow-lg">
+            <p className="font-display text-3xl font-black text-volt">{stats?.in_chair_count ?? 0}</p>
+            <p className="mt-1 text-xs font-bold uppercase tracking-wider text-mute">In chair</p>
+            <p className="mt-1 text-xl">🪑</p>
+          </div>
+          <div className="rounded-2xl border border-line bg-panel p-4 text-center shadow-lg">
+            <p className="font-display text-3xl font-black text-bone">{barbers.length}</p>
+            <p className="mt-1 text-xs font-bold uppercase tracking-wider text-mute">Barbers</p>
+            <p className="mt-1 text-xl">👥</p>
+          </div>
         </div>
-      </div>
 
-      {shop.description && <p className="mb-8 text-sm leading-relaxed text-mute">{shop.description}</p>}
-
-      <div className="mb-8 grid grid-cols-3 gap-3">
-        <div className="rounded-md border border-line bg-panel p-4 text-center">
-          <p className="font-display text-2xl font-bold" style={{ color: shop.accent_color }}>
-            {stats?.waiting_count ?? 0}
-          </p>
-          <p className="text-xs uppercase tracking-wider text-mute">Waiting</p>
-        </div>
-        <div className="rounded-md border border-line bg-panel p-4 text-center">
-          <p className="font-display text-2xl font-bold text-volt">{stats?.in_chair_count ?? 0}</p>
-          <p className="text-xs uppercase tracking-wider text-mute">In chair</p>
-        </div>
-        <div className="rounded-md border border-line bg-panel p-4 text-center">
-          <p className="font-display text-2xl font-bold text-bone">{barbers.length}</p>
-          <p className="text-xs uppercase tracking-wider text-mute">Barbers</p>
-        </div>
-      </div>
-
-      {loyaltySettings?.enabled && (
-        <div className="mb-8 rounded-md border border-line bg-panel p-6">
-          <div className="mb-1 flex items-center justify-between gap-3">
-            <h2 className="font-display text-sm uppercase tracking-wider text-mute">Loyalty at {shop.name}</h2>
-            {myPoints != null && (
-              <span className="font-display text-xl font-bold" style={{ color: shop.accent_color }}>
-                {myPoints} pts
-              </span>
+        {loyaltySettings?.enabled && (
+          <div className="mt-4 rounded-2xl border border-line bg-panel p-6 shadow-lg">
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <h2 className="font-display text-sm font-bold uppercase tracking-wider text-mute">
+                Loyalty at {shop.name}
+              </h2>
+              {myPoints != null && (
+                <span className="font-display text-xl font-black" style={{ color: shop.accent_color }}>
+                  {myPoints} pts
+                </span>
+              )}
+            </div>
+            <p className="mb-4 text-xs text-mute">
+              {loyaltySettings.points_per_visit} pts per completed visit · points never expire
+              {user ? '' : ' · sign in to earn points here'}
+            </p>
+            {loyaltyRewards.length === 0 ? (
+              <p className="text-sm text-mute">Loyalty is on, but this shop has not added rewards yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {loyaltyRewards.map((reward) => {
+                  const remaining = myPoints == null ? null : Math.max(0, reward.points_cost - myPoints)
+                  const pct =
+                    myPoints == null
+                      ? 0
+                      : Math.min(100, Math.round((myPoints / reward.points_cost) * 100))
+                  return (
+                    <li key={reward.id}>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-bone">{reward.name}</span>
+                        <span className="shrink-0 text-mute">{reward.points_cost} pts</span>
+                      </div>
+                      {myPoints != null && (
+                        <>
+                          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-panel2">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${pct}%`, backgroundColor: shop.accent_color }}
+                            />
+                          </div>
+                          <p className="mt-1 text-xs text-mute">
+                            {remaining === 0
+                              ? 'Ready to redeem — see your dashboard'
+                              : `${remaining} pts to go`}
+                          </p>
+                        </>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            {user && (
+              <p className="mt-4 text-xs text-mute">
+                Redeem from your{' '}
+                <Link to="/dashboard" className="text-brandBright hover:underline">
+                  dashboard
+                </Link>{' '}
+                — the barber confirms it at the desk.
+              </p>
             )}
           </div>
-          <p className="mb-4 text-xs text-mute">
-            {loyaltySettings.points_per_visit} pts per completed visit · points never expire
-            {user
-              ? ''
-              : ' · sign in to earn points here'}
-          </p>
-          {loyaltyRewards.length === 0 ? (
-            <p className="text-sm text-mute">Loyalty is on, but this shop has not added rewards yet.</p>
-          ) : (
-            <ul className="space-y-3">
-              {loyaltyRewards.map((reward) => {
-                const remaining = myPoints == null ? null : Math.max(0, reward.points_cost - myPoints)
-                const pct =
-                  myPoints == null ? 0 : Math.min(100, Math.round((myPoints / reward.points_cost) * 100))
+        )}
+
+        {isCalled && (
+          <div
+            className="mt-4 rounded-2xl px-6 py-5 text-center shadow-lg"
+            style={{ backgroundColor: shop.accent_color }}
+          >
+            <p className="font-display text-3xl font-black text-bone">🔔 You're called — head to the chair!</p>
+            <p className="mt-1 text-sm text-bone">
+              Your barber is ready for you. This stays up until your spot changes.
+            </p>
+          </div>
+        )}
+
+        {/* Hours */}
+        {hours && (
+          <div className="mt-4 rounded-2xl border border-line bg-panel p-5 shadow-lg">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-display text-base font-black uppercase tracking-wider text-bone">
+                🕐 Hours
+              </h2>
+              {openState.state === 'open' ? (
+                <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
+                  Open now
+                </span>
+              ) : (
+                <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-600">
+                  Closed · opens {formatNextOpening(nextOpening, new Date())}
+                </span>
+              )}
+            </div>
+            <div className="my-3 border-t border-line" />
+            <div className="space-y-1.5">
+              {DAY_KEYS.map((key) => {
+                const d = hours[key]
                 return (
-                  <li key={reward.id}>
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="text-bone">{reward.name}</span>
-                      <span className="shrink-0 text-mute">{reward.points_cost} pts</span>
-                    </div>
-                    {myPoints != null && (
-                      <>
-                        <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-panel2">
-                          <div
-                            className="h-full rounded-full"
-                            style={{ width: `${pct}%`, backgroundColor: shop.accent_color }}
-                          />
-                        </div>
-                        <p className="mt-1 text-xs text-mute">
-                          {remaining === 0 ? 'Ready to redeem — see your dashboard' : `${remaining} pts to go`}
-                        </p>
-                      </>
-                    )}
-                  </li>
+                  <div key={key} className="flex items-center justify-between text-sm">
+                    <span className="font-bold text-bone">{DAY_LABELS[key]}</span>
+                    <span className="text-mute">
+                      {d.closed ? 'Closed' : `${formatTime(d.open)} – ${formatTime(d.close)}`}
+                    </span>
+                  </div>
                 )
               })}
-            </ul>
-          )}
-          {user && (
-            <p className="mt-4 text-xs text-mute">
-              Redeem from your <Link to="/dashboard" className="text-brandBright hover:underline">dashboard</Link> —
-              the barber confirms it at the desk.
-            </p>
-          )}
-        </div>
-      )}
+            </div>
+          </div>
+        )}
 
-      {isCalled && (
-        <div className="mb-8 rounded-md px-6 py-5 text-center" style={{ backgroundColor: shop.accent_color }}>
-          <p className="font-display text-3xl font-bold text-bone">🔔 You're called — head to the chair!</p>
-          <p className="mt-1 text-sm text-bone">
-            Your barber is ready for you. This stays up until your spot changes.
-          </p>
-        </div>
-      )}
-
-      {hours && (
-        <div className="mb-8 rounded-md border border-line bg-panel p-6">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-display text-sm uppercase tracking-wider text-mute">Hours</h2>
-            {openState.state === 'open' && <span className="text-sm font-medium text-volt">Open now</span>}
-            {openState.state === 'closed' && (
-              <span className="text-sm font-medium text-crimsonBright">
-                Closed · opens {formatNextOpening(nextOpening, new Date())}
+        {/* Services & prices dropdown */}
+        {services.length > 0 && (
+          <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-panel shadow-lg">
+            <button
+              type="button"
+              onClick={() => setServicesOpen((o) => !o)}
+              aria-expanded={servicesOpen}
+              className="flex w-full items-center justify-between px-5 py-4 text-left"
+            >
+              <span className="font-display text-base font-black uppercase tracking-wider text-bone">
+                ✂️ Services &amp; prices
               </span>
+              <span className="flex items-center gap-2 text-sm text-mute">
+                {services.length} services
+                <span className="text-base text-bone">{servicesOpen ? '▴' : '▾'}</span>
+              </span>
+            </button>
+            {servicesOpen && (
+              <div className="divide-y divide-line border-t border-line px-5 py-2">
+                {services.map((s) => (
+                  <div key={s.id} className="flex items-baseline justify-between gap-3 py-2.5">
+                    <span className="text-sm font-medium text-bone">{s.name}</span>
+                    <span className="shrink-0 text-sm text-mute">
+                      {s.duration_min ? `${s.duration_min} min · ` : ''}
+                      <span className="font-bold text-bone">{formatPriceCents(s.price_cents)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-            {DAY_KEYS.map((key) => {
-              const d = hours[key]
-              return (
-                <p key={key} className="text-sm text-mute">
-                  <span className="text-bone">{DAY_LABELS[key]}: </span>
-                  {d.closed ? 'Closed' : `${formatTime(d.open)} – ${formatTime(d.close)}`}
-                </p>
-              )
-            })}
-          </div>
-        </div>
-      )}
+        )}
 
-      {services.length > 0 && (
-        <div className="mb-8 overflow-hidden rounded-md border border-line bg-panel">
-          <button
-            type="button"
-            onClick={() => setServicesOpen((o) => !o)}
-            aria-expanded={servicesOpen}
-            className="flex w-full items-center justify-between px-6 py-4 text-left"
-          >
-            <span className="font-display text-sm uppercase tracking-wider text-mute">Services &amp; prices</span>
-            <span className="flex items-center gap-2 text-sm text-mute">
-              {services.length} services
-              <span className="text-base text-bone">{servicesOpen ? '▴' : '▾'}</span>
-            </span>
-          </button>
-          {servicesOpen && (
-            <div className="divide-y divide-line border-t border-line px-6 py-2">
-            {services.map((s) => (
-              <div key={s.id} className="flex items-baseline justify-between gap-3 py-2">
-                <span className="text-sm text-bone">{s.name}</span>
-                <span className="shrink-0 text-sm text-mute">
-                  {s.duration_min ? `${s.duration_min} min · ` : ''}
-                  <span className="font-medium text-bone">{formatPriceCents(s.price_cents)}</span>
-                </span>
-              </div>
-            ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {myPosition ? (
-        <div
-          className="mb-8 rounded-md border p-6 text-center"
-          style={{ borderColor: shop.accent_color, backgroundColor: `${shop.accent_color}1a` }}
-        >
-          {myPosition.status === 'called' ? (
-            <>
-              <p className="text-xs uppercase tracking-wider text-mute">You're up!</p>
-              <p className="font-display text-3xl font-bold text-bone">Head to the shop now</p>
-            </>
-          ) : (
-            <>
-              <p className="text-xs uppercase tracking-wider text-mute">You're checked in</p>
-              <p className="font-display text-5xl font-bold text-bone">#{myPosition.position}</p>
-            </>
-          )}
-          <p className="mt-1 text-sm text-mute">{myPosition.service}</p>
-          <button
-            onClick={handleCancel}
-            disabled={checkingIn}
-            className="mt-4 text-sm text-mute underline-offset-2 hover:text-crimsonBright hover:underline disabled:opacity-50"
-          >
-            Cancel check-in
-          </button>
-        </div>
-      ) : (
-        <div className="mb-8 rounded-md border border-line bg-panel p-6">
-          <h2 className="mb-4 font-display text-sm uppercase tracking-wider text-mute">Check in</h2>
-
-          {isClosed ? (
-            <div>
-              <p className="text-sm text-mute">This shop is closed right now.</p>
-              <p className="mt-1 text-sm text-bone">
-                Check-in opens {formatNextOpening(nextOpening, new Date())}.
-              </p>
-            </div>
-          ) : (
-            <>
-          {!user && (
-            <div className="space-y-4">
-              <p className="text-sm text-mute">
-                Check-in needs a free account — that's how the shop knows your spot is really yours.
-              </p>
-              <Link
-                to={`/login?next=/shop/${shop.slug}`}
-                className="block w-full rounded bg-brand px-4 py-2.5 text-center font-medium text-white transition-colors hover:bg-brandBright"
-              >
-                Sign in to check in
-              </Link>
-              <Link
-                to={`/signup?next=/shop/${shop.slug}`}
-                className="block w-full rounded border-2 border-brand bg-panel px-4 py-2.5 text-center font-medium text-brand transition-colors hover:bg-brand/5"
-              >
-                Create a free account
-              </Link>
-              <p className="text-sm text-mute">
-                No account? Walk in and the barber can add you at the desk.
-              </p>
-            </div>
-          )}
-
-          {user && (
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Service</label>
-                <select
-                  value={service}
-                  onChange={(e) => setService(e.target.value)}
-                  className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+        {/* Barbers */}
+        {barbers.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-line bg-panel p-5 shadow-lg">
+            <h2 className="mb-3 font-display text-base font-black uppercase tracking-wider text-bone">
+              👥 Barbers
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              {barbers.map((b) => (
+                <span
+                  key={b.id}
+                  className="rounded-full border border-line bg-panel2 px-4 py-1.5 text-sm font-medium text-bone"
                 >
-                  {serviceOptions.map((s) => (
-                    <option key={s.name} value={s.name}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  {b.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
-              {barbers.length > 0 && (
-                <div>
-                  <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">
-                    Barber (optional)
-                  </label>
-                  <select
-                    value={barberId}
-                    onChange={(e) => setBarberId(e.target.value)}
-                    className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-                  >
-                    <option value="">No preference</option>
-                    {barbers.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+        {/* Check in — bottom section */}
+        <div className="mt-4 rounded-2xl border border-line bg-panel p-5 shadow-lg">
+          <h2 className="mb-3 font-display text-base font-black uppercase tracking-wider text-bone">
+            📅 Check in
+          </h2>
+          {myPosition ? (
+            <div
+              className="rounded-xl border-2 p-6 text-center"
+              style={{ borderColor: shop.accent_color, backgroundColor: `${shop.accent_color}1a` }}
+            >
+              {myPosition.status === 'called' ? (
+                <>
+                  <p className="text-xs font-bold uppercase tracking-wider text-mute">You're up!</p>
+                  <p className="font-display text-3xl font-black text-bone">Head to the shop now</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-bold uppercase tracking-wider text-mute">
+                    You're checked in
+                  </p>
+                  <p className="font-display text-5xl font-black text-bone">#{myPosition.position}</p>
+                </>
               )}
-
-              <div>
-                <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">
-                  When will you arrive?
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {ETA_OPTIONS.map((mins) => (
-                    <button
-                      key={mins}
-                      type="button"
-                      onClick={() => setEtaMinutes(mins)}
-                      className={`rounded border px-3 py-2.5 text-sm font-medium transition-colors ${
-                        etaMinutes === mins ? 'border-brand bg-brand/10 text-bone' : 'border-line bg-panel2 text-mute'
-                      }`}
-                    >
-                      {mins} min
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {error && <p className="text-sm text-crimsonBright">{error}</p>}
-
+              <p className="mt-1 text-sm text-mute">{myPosition.service}</p>
               <button
-                onClick={handleCheckIn}
+                onClick={handleCancel}
                 disabled={checkingIn}
-                className="w-full rounded px-4 py-2.5 font-medium text-bone transition-colors disabled:opacity-40"
-                style={{ backgroundColor: shop.accent_color }}
+                className="mt-4 text-sm text-mute underline-offset-2 hover:text-crimsonBright hover:underline disabled:opacity-50"
               >
-                {checkingIn ? 'Checking in…' : 'Check in'}
+                Cancel check-in
               </button>
             </div>
-          )}
-            </>
+          ) : isClosed ? (
+            <div className="flex items-center gap-4 rounded-xl bg-red-50 p-4">
+              <span className="text-3xl">🏪</span>
+              <div>
+                <p className="text-sm font-bold text-red-600">This shop is closed right now.</p>
+                <p className="text-sm text-bone">
+                  Check-in opens {formatNextOpening(nextOpening, new Date())}.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setError(null)
+                setSheetOpen(true)
+              }}
+              className="w-full rounded-xl px-4 py-4 text-lg font-black text-white shadow-lg transition-transform active:scale-[0.99]"
+              style={{ backgroundColor: shop.accent_color }}
+            >
+              Check in
+            </button>
           )}
         </div>
-      )}
+      </div>
 
-      {barbers.length > 0 && (
-        <div>
-          <h2 className="mb-3 font-display text-sm uppercase tracking-wider text-mute">Barbers</h2>
-          <div className="flex flex-wrap gap-2">
-            {barbers.map((b) => (
-              <span key={b.id} className="rounded-full border border-line bg-panel px-3 py-1.5 text-sm text-bone">
-                {b.name}
-              </span>
-            ))}
+      {/* Bottom-sheet check-in */}
+      {sheetOpen && (
+        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Check in">
+          <div
+            className="animate-sheet-fade absolute inset-0 bg-black/55"
+            onClick={() => setSheetOpen(false)}
+          />
+          <div className="animate-sheet-up absolute inset-x-0 bottom-0">
+            <div
+              className="mx-auto max-w-lg rounded-t-3xl border-t-2 bg-panel px-6 pb-10 pt-3 shadow-2xl"
+              style={{ borderColor: shop.accent_color }}
+            >
+              <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-line" />
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="font-display text-xl font-black text-bone">
+                  Check in at {shop.name}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setSheetOpen(false)}
+                  aria-label="Close check-in"
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-mute hover:bg-panel2 hover:text-bone"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {!user ? (
+                <div className="space-y-4">
+                  <p className="text-sm text-mute">
+                    Check-in needs a free account — that's how the shop knows your spot is really
+                    yours.
+                  </p>
+                  <Link
+                    to={`/login?next=/shop/${shop.slug}`}
+                    className="block w-full rounded-xl bg-brand px-4 py-3 text-center font-bold text-white transition-colors hover:bg-brandBright"
+                  >
+                    Sign in to check in
+                  </Link>
+                  <Link
+                    to={`/signup?next=/shop/${shop.slug}`}
+                    className="block w-full rounded-xl border-2 border-brand bg-panel px-4 py-3 text-center font-bold text-brand transition-colors hover:bg-brand/5"
+                  >
+                    Create a free account
+                  </Link>
+                  <p className="text-sm text-mute">
+                    No account? Walk in and the barber can add you at the desk.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-mute">
+                      Service
+                    </label>
+                    <select
+                      value={service}
+                      onChange={(e) => setService(e.target.value)}
+                      className="w-full rounded-xl border border-line bg-panel2 px-3 py-3 text-base text-bone"
+                    >
+                      {serviceOptions.map((s) => (
+                        <option key={s.name} value={s.name}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {barbers.length > 0 && (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-mute">
+                        Barber (optional)
+                      </label>
+                      <select
+                        value={barberId}
+                        onChange={(e) => setBarberId(e.target.value)}
+                        className="w-full rounded-xl border border-line bg-panel2 px-3 py-3 text-base text-bone"
+                      >
+                        <option value="">No preference</option>
+                        {barbers.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-mute">
+                      When will you arrive?
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {ETA_OPTIONS.map((mins) => (
+                        <button
+                          key={mins}
+                          type="button"
+                          onClick={() => setEtaMinutes(mins)}
+                          className={`rounded-xl border-2 px-3 py-3 text-base font-bold transition-colors ${
+                            etaMinutes === mins
+                              ? 'border-brand bg-brand/10 text-bone'
+                              : 'border-line bg-panel2 text-mute'
+                          }`}
+                        >
+                          {mins} min
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {error && <p className="text-sm text-crimsonBright">{error}</p>}
+
+                  <button
+                    onClick={handleCheckIn}
+                    disabled={checkingIn}
+                    className="w-full rounded-xl px-4 py-4 text-lg font-black text-white shadow-lg transition-transform active:scale-[0.99] disabled:opacity-40"
+                    style={{ backgroundColor: shop.accent_color }}
+                  >
+                    {checkingIn ? 'Checking in…' : 'Check in'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
