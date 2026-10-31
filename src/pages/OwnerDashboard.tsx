@@ -7,9 +7,11 @@ import {
   parseShopHours,
 } from '../lib/hours'
 import { fetchShopServices, toServiceOptions } from '../lib/services'
+import { creditVisit } from '../lib/loyalty'
 import type { Barber, Client, QueueEntry, Shop, ShopHours, ShopService } from '../types'
+import { LoyaltyPanel } from './LoyaltyPanel'
 
-type Tab = 'overview' | 'queue' | 'clients' | 'barbers' | 'services' | 'settings'
+type Tab = 'overview' | 'queue' | 'clients' | 'barbers' | 'services' | 'settings' | 'loyalty'
 
 export function OwnerDashboard({
   shop,
@@ -24,6 +26,8 @@ export function OwnerDashboard({
   const [barbers, setBarbers] = useState<Barber[]>([])
   const [services, setServices] = useState<ShopService[]>([])
   const [completedToday, setCompletedToday] = useState(0)
+  const [loyaltyNotice, setLoyaltyNotice] = useState<string | null>(null)
+  const [loyaltyRetryId, setLoyaltyRetryId] = useState<string | null>(null)
 
   async function loadQueue() {
     const { data } = await supabase
@@ -81,35 +85,118 @@ export function OwnerDashboard({
   const called = queue.filter((q) => q.status === 'called')
   const inChair = queue.filter((q) => q.status === 'in_chair')
 
-  async function callEntry(id: string) {
-    const { data, error } = await supabase
-      .from('queue')
-      .update({ status: 'called', called_at: new Date().toISOString() })
-      .eq('id', id)
-      .select('id')
-      .single()
-    if (error || !data) return
-    // Second channel for "you're called": email. Best-effort on purpose —
-    // the in-app banner is what the client sees first, and a missing or
-    // not-yet-deployed email function must never break the call itself.
-    try {
-      await supabase.functions.invoke('send-called-email', { body: { queue_id: id } })
-    } catch {
-      // Email not configured yet — the banner still fires.
+  // NOTE (2026-10-30): the old waiting -> called -> in_chair pipeline is gone.
+  // Isaac's call: one tap finishes the job. Tapping a client offers exactly
+  // two choices — "In chair" (served: completed visit, Clients section,
+  // loyalty points) or "Walked out" (removed, no visit recorded). Both
+  // remove the client from the live queue immediately, from any position.
+  // The send-called-email Edge Function is still deployed but no longer
+  // invoked — there is no "call" step left to trigger it.
+  // Completing a visit also records the client in the shop's Clients list —
+  // this is what makes the Clients tab real. Matched by profile first, then
+  // phone, so repeat visits bump the same record. "Walked out" intentionally
+  // leaves no record (no visit happened).
+  async function upsertClientFromVisit(entry: QueueEntry) {
+    const now = new Date().toISOString()
+    let existing: { id: string; visit_count: number } | null = null
+    if (entry.client_profile_id) {
+      const { data } = await supabase
+        .from('clients')
+        .select('id, visit_count')
+        .eq('shop_id', entry.shop_id)
+        .eq('profile_id', entry.client_profile_id)
+        .maybeSingle()
+      if (data) existing = data
+    }
+    if (!existing && entry.phone) {
+      const { data } = await supabase
+        .from('clients')
+        .select('id, visit_count')
+        .eq('shop_id', entry.shop_id)
+        .eq('phone', entry.phone)
+        .maybeSingle()
+      if (data) existing = data
+    }
+    if (existing) {
+      const { error } = await supabase
+        .from('clients')
+        .update({
+          name: entry.client_name,
+          phone: entry.phone,
+          last_visit: now,
+          visit_count: (existing.visit_count ?? 0) + 1,
+        })
+        .eq('id', existing.id)
+      if (error) throw error
+    } else {
+      const row: Record<string, unknown> = {
+        shop_id: entry.shop_id,
+        profile_id: entry.client_profile_id,
+        name: entry.client_name,
+        phone: entry.phone,
+        visit_count: 1,
+        last_visit: now,
+      }
+      let { error } = await supabase.from('clients').insert(row)
+      if (error && /tier/i.test(error.message)) {
+        // No DB default on tier — fall back to a plain value.
+        row.tier = 'regular'
+        ;({ error } = await supabase.from('clients').insert(row))
+      }
+      if (error) throw error
     }
   }
-  async function callNext() {
-    const next = waiting[0]
-    if (next) await callEntry(next.id)
-  }
-  async function confirmArrived(id: string) {
-    await supabase.from('queue').update({ status: 'in_chair' }).eq('id', id)
-  }
-  async function markNoShow(id: string) {
-    await supabase.from('queue').update({ status: 'no_show' }).eq('id', id)
-  }
-  async function completeEntry(id: string) {
+  async function completeEntry(entry: QueueEntry) {
+    const id = entry.id
     await supabase.from('queue').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id)
+    try {
+      await upsertClientFromVisit(entry)
+      loadClients()
+    } catch (e) {
+      setLoyaltyNotice(
+        `Visit completed, but the client record was not saved: ${e instanceof Error ? e.message : 'unknown error'}.`,
+      )
+    }
+    // Loyalty credit is deliberately best-effort and separate: the visit
+    // is completed whether or not points land. The RPC itself re-checks
+    // that the row is completed and that the caller is shop staff, and it
+    // credits at most once per queue entry (unique index), so a retry
+    // can never double-credit. A failure here (e.g. the loyalty
+    // migration has not been applied yet) is shown with a Retry button,
+    // not hidden — and "no credit" is also the correct outcome when
+    // loyalty is off, in which case the RPC simply returns [].
+    try {
+      const credited = await creditVisit(id)
+      setLoyaltyRetryId(null)
+      if (credited.length > 0) {
+        setLoyaltyNotice(
+          `Loyalty: ${credited.map((c) => `${c.kind === 'welcome_bonus' ? 'welcome bonus' : 'visit'} +${c.points}`).join(', ')} pts credited.`,
+        )
+      } else {
+        setLoyaltyNotice(null)
+      }
+    } catch (e) {
+      setLoyaltyNotice(
+        `Visit completed, but loyalty points were not recorded: ${e instanceof Error ? e.message : 'loyalty unavailable'}.`,
+      )
+      setLoyaltyRetryId(id)
+    }
+  }
+  async function retryLoyaltyCredit() {
+    if (!loyaltyRetryId) return
+    try {
+      const credited = await creditVisit(loyaltyRetryId)
+      setLoyaltyRetryId(null)
+      setLoyaltyNotice(
+        credited.length > 0
+          ? `Loyalty: ${credited.map((c) => `${c.kind === 'welcome_bonus' ? 'welcome bonus' : 'visit'} +${c.points}`).join(', ')} pts credited.`
+          : 'Loyalty: no points were due for that visit.',
+      )
+    } catch (e) {
+      setLoyaltyNotice(
+        `Loyalty credit still failed: ${e instanceof Error ? e.message : 'loyalty unavailable'}.`,
+      )
+    }
   }
   async function removeEntry(id: string) {
     await supabase.from('queue').delete().eq('id', id)
@@ -128,6 +215,7 @@ export function OwnerDashboard({
               ['barbers', 'Barbers'],
               ['services', 'Services'],
               ['settings', 'Settings'],
+              ['loyalty', 'Loyalty'],
             ] as [Tab, string][]
           ).map(([key, label]) => (
             <button
@@ -145,11 +233,20 @@ export function OwnerDashboard({
       </aside>
 
       <main className="min-w-0 flex-1">
+        {loyaltyNotice && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-line bg-panel px-4 py-3 text-sm text-mute">
+            <span>{loyaltyNotice}</span>
+            {loyaltyRetryId && (
+              <button onClick={retryLoyaltyCredit} className="text-sm text-brandBright hover:underline">
+                Retry loyalty credit
+              </button>
+            )}
+          </div>
+        )}
+        {tab === 'loyalty' && <LoyaltyPanel shop={shop} />}
         {tab === 'overview' && (
           <OverviewTab
             waiting={waiting.length}
-            called={called.length}
-            inChair={inChair.length}
             completedToday={completedToday}
             accent={shop.accent_color}
           />
@@ -162,18 +259,21 @@ export function OwnerDashboard({
             inChair={inChair}
             barbers={barbers}
             services={services}
-            onCallNext={callNext}
-            onCall={callEntry}
-            onConfirmArrived={confirmArrived}
-            onNoShow={markNoShow}
             onComplete={completeEntry}
             onRemove={removeEntry}
             onQueueChanged={loadQueue}
           />
         )}
-        {tab === 'clients' && <ClientsTab clients={clients} />}
+        {tab === 'clients' && <ClientsTab clients={clients} onChange={loadClients} />}
         {tab === 'barbers' && <BarbersTab shopId={shop.id} barbers={barbers} onChange={loadBarbers} />}
-        {tab === 'services' && <ServicesTab shopId={shop.id} services={services} onChange={loadServices} />}
+        {tab === 'services' && (
+          <ServicesTab
+            shop={shop}
+            services={services}
+            onChange={loadServices}
+            onShopUpdated={onShopUpdated}
+          />
+        )}
         {tab === 'settings' && <SettingsTab shop={shop} onShopUpdated={onShopUpdated} />}
       </main>
     </div>
@@ -182,36 +282,24 @@ export function OwnerDashboard({
 
 function OverviewTab({
   waiting,
-  called,
-  inChair,
   completedToday,
   accent,
 }: {
   waiting: number
-  called: number
-  inChair: number
   completedToday: number
   accent: string
 }) {
   return (
     <div>
       <h1 className="mb-6 font-display text-2xl font-semibold text-bone">Overview</h1>
-      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div className="rounded-md border border-line bg-panel p-5">
+      <div className="mb-8 grid grid-cols-2 gap-4">
+        <div className="rounded-xl border border-line bg-panel p-5 shadow-lg">
           <p className="mb-2 text-xs uppercase tracking-wider text-mute">Waiting</p>
           <p className="font-display text-3xl font-bold" style={{ color: accent }}>
             {waiting}
           </p>
         </div>
-        <div className="rounded-md border border-line bg-panel p-5">
-          <p className="mb-2 text-xs uppercase tracking-wider text-mute">Called</p>
-          <p className="font-display text-3xl font-bold text-amber">{called}</p>
-        </div>
-        <div className="rounded-md border border-line bg-panel p-5">
-          <p className="mb-2 text-xs uppercase tracking-wider text-mute">In chair</p>
-          <p className="font-display text-3xl font-bold text-volt">{inChair}</p>
-        </div>
-        <div className="rounded-md border border-line bg-panel p-5">
+        <div className="rounded-xl border border-line bg-panel p-5 shadow-lg">
           <p className="mb-2 text-xs uppercase tracking-wider text-mute">Completed today</p>
           <p className="font-display text-3xl font-bold text-bone">{completedToday}</p>
         </div>
@@ -219,9 +307,9 @@ function OverviewTab({
       <div className="rounded-md border border-line bg-panel p-5">
         <h2 className="mb-4 font-display text-sm uppercase tracking-wider text-mute">Right now</h2>
         <p className="text-sm text-mute">
-          {waiting + called + inChair === 0
+          {waiting === 0
             ? "Shop's quiet — no one checked in."
-            : `${waiting} waiting, ${called} called, ${inChair} in the chair.`}
+            : `${waiting} in line.`}
         </p>
       </div>
     </div>
@@ -230,14 +318,14 @@ function OverviewTab({
 
 const CALLED_GRACE_MINUTES = 10
 
-// Generic fallback when a shop hasn't set up its live menu yet. The walk-in
-// picker prefers the shop's own services (see QueueTab's walkInOptions).
+// Generic fallback when a shop hasn't set up its live menu yet. The add-client
+// picker prefers the shop's own services (see QueueTab's addOptions).
 const WALK_IN_SERVICES = ['Haircut', 'Haircut + Beard', 'Beard trim', 'Kids cut']
 
-function expectedArrival(entry: QueueEntry): string {
+function arrivalTime(entry: QueueEntry): string {
   if (entry.eta_minutes == null) return '—'
   const base = new Date(entry.checked_in_at).getTime() + entry.eta_minutes * 60_000
-  return `${entry.eta_minutes} min (by ${new Date(base).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})`
+  return new Date(base).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
 function QueueTab({
@@ -247,10 +335,6 @@ function QueueTab({
   inChair,
   barbers,
   services,
-  onCallNext,
-  onCall,
-  onConfirmArrived,
-  onNoShow,
   onComplete,
   onRemove,
   onQueueChanged,
@@ -261,11 +345,7 @@ function QueueTab({
   inChair: QueueEntry[]
   barbers: Barber[]
   services: ShopService[]
-  onCallNext: () => void
-  onCall: (id: string) => void
-  onConfirmArrived: (id: string) => void
-  onNoShow: (id: string) => void
-  onComplete: (id: string) => void
+  onComplete: (entry: QueueEntry) => void
   onRemove: (id: string) => void
   onQueueChanged: () => void
 }) {
@@ -279,244 +359,403 @@ function QueueTab({
     return () => clearInterval(t)
   }, [])
 
-  const [walkInName, setWalkInName] = useState('')
-  const [walkInPhone, setWalkInPhone] = useState('')
-  const [walkInService, setWalkInService] = useState(WALK_IN_SERVICES[0])
-  const [walkInBarberId, setWalkInBarberId] = useState('')
-  const [walkInSaving, setWalkInSaving] = useState(false)
-  const [walkInError, setWalkInError] = useState<string | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
+  const [popupEntry, setPopupEntry] = useState<QueueEntry | null>(null)
+  const [addName, setAddName] = useState('')
+  const [addPhone, setAddPhone] = useState('')
+  const [addService, setAddService] = useState(WALK_IN_SERVICES[0])
+  const [addBarberId, setAddBarberId] = useState('')
+  const [addSaving, setAddSaving] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
 
   // Live menu from the shop's services table (generic fallback until set).
-  const walkInOptions = toServiceOptions(
+  const addOptions = toServiceOptions(
     services.filter((s) => s.active),
     WALK_IN_SERVICES,
   )
   useEffect(() => {
-    if (walkInOptions.length > 0 && !walkInOptions.some((o) => o.name === walkInService)) {
-      setWalkInService(walkInOptions[0].name)
+    if (addOptions.length > 0 && !addOptions.some((o) => o.name === addService)) {
+      setAddService(addOptions[0].name)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [services])
 
-  // A walk-in standing at the desk: same queue row the kiosk creates, but
-  // entered by the owner so a dead iPad never blocks the line.
-  async function handleAddWalkIn() {
-    if (!walkInName.trim()) return
-    setWalkInSaving(true)
-    setWalkInError(null)
+  // Close the client popup with Escape.
+  useEffect(() => {
+    if (!popupEntry) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPopupEntry(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [popupEntry])
+
+  // A client at the desk: same queue row the kiosk creates, but entered by
+  // the owner so a dead iPad never blocks the line.
+  async function handleAddClient() {
+    if (!addName.trim()) return
+    setAddSaving(true)
+    setAddError(null)
     const { error: insertError } = await supabase.from('queue').insert({
       shop_id: shopId,
-      client_name: walkInName.trim(),
-      phone: walkInPhone.trim() || null,
-      service: walkInService,
-      barber_id: walkInBarberId || null,
+      client_name: addName.trim(),
+      phone: addPhone.trim() || null,
+      service: addService,
+      barber_id: addBarberId || null,
     })
-    setWalkInSaving(false)
+    setAddSaving(false)
     if (insertError) {
-      setWalkInError(insertError.message)
+      setAddError(insertError.message)
       return
     }
-    setWalkInName('')
-    setWalkInPhone('')
-    setWalkInService(walkInOptions[0]?.name ?? WALK_IN_SERVICES[0])
-    setWalkInBarberId('')
+    setAddName('')
+    setAddPhone('')
+    setAddService(addOptions[0]?.name ?? WALK_IN_SERVICES[0])
+    setAddBarberId('')
+    setAddOpen(false)
     onQueueChanged()
   }
+
+  const allEntries = [...inChair, ...called, ...waiting]
+  // The first person on the list is always Up Next until the owner taps
+  // "In chair" or "Walked out" — then the next in line moves up.
+  const nextId = allEntries[0]?.id ?? null
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="font-display text-2xl font-semibold text-bone">Live queue</h1>
         <button
-          onClick={onCallNext}
-          disabled={waiting.length === 0}
-          className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright disabled:opacity-40"
+          onClick={() => setAddOpen((o) => !o)}
+          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright"
         >
-          Call next client {waiting.length > 0 && `(${waiting.length} waiting)`}
+          Add client
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={`h-4 w-4 transition-transform ${addOpen ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          >
+            <path d="m4 6 4 4 4-4" />
+          </svg>
         </button>
       </div>
 
-      <div className="mb-6 rounded-md border border-line bg-panel p-5">
-        <h2 className="mb-4 font-display text-sm uppercase tracking-wider text-mute">Add a walk-in</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Client name</label>
-            <input
-              value={walkInName}
-              onChange={(e) => setWalkInName(e.target.value)}
-              placeholder="Walk-in client"
-              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-            />
+      {addOpen && (
+        <div className="mb-6 rounded-md border border-line bg-panel p-5">
+          <h2 className="mb-4 font-display text-sm uppercase tracking-wider text-mute">Add client</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Client name</label>
+              <input
+                value={addName}
+                onChange={(e) => setAddName(e.target.value)}
+                placeholder="Client name"
+                className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Phone (optional)</label>
+              <input
+                type="tel"
+                value={addPhone}
+                onChange={(e) => setAddPhone(e.target.value)}
+                className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Service</label>
+              <select
+                value={addService}
+                onChange={(e) => setAddService(e.target.value)}
+                className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+              >
+                {addOptions.map((s) => (
+                  <option key={s.name} value={s.name}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Barber (optional)</label>
+              <select
+                value={addBarberId}
+                onChange={(e) => setAddBarberId(e.target.value)}
+                className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+              >
+                <option value="">No preference</option>
+                {barbers.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div>
-            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Phone (optional)</label>
-            <input
-              type="tel"
-              value={walkInPhone}
-              onChange={(e) => setWalkInPhone(e.target.value)}
-              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Service</label>
-            <select
-              value={walkInService}
-              onChange={(e) => setWalkInService(e.target.value)}
-              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-            >
-              {walkInOptions.map((s) => (
-                <option key={s.name} value={s.name}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Barber (optional)</label>
-            <select
-              value={walkInBarberId}
-              onChange={(e) => setWalkInBarberId(e.target.value)}
-              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
-            >
-              <option value="">No preference</option>
-              {barbers.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+          {addError && <p className="mt-3 text-sm text-crimsonBright">{addError}</p>}
+          <button
+            onClick={handleAddClient}
+            disabled={addSaving || !addName.trim()}
+            className="mt-4 rounded bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
+          >
+            {addSaving ? 'Adding…' : 'Add to queue'}
+          </button>
+        </div>
+      )}
+
+      {allEntries.length === 0 ? (
+        <p className="rounded-md border border-line bg-panel px-5 py-8 text-center text-mute">
+          No one in the queue.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {allEntries.map((entry, i) => {
+            const minutesAgo = entry.called_at ? (Date.now() - new Date(entry.called_at).getTime()) / 60_000 : 0
+            const stuck = entry.status === 'called' && minutesAgo >= CALLED_GRACE_MINUTES
+            const isNext = entry.id === nextId
+            const statusText =
+              entry.status === 'in_chair'
+                ? 'In chair'
+                : entry.status === 'called'
+                  ? `Called ${Math.round(minutesAgo)}m ago`
+                  : 'Waiting'
+            return (
+              <div
+                key={entry.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setPopupEntry(entry)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setPopupEntry(entry)
+                  }
+                }}
+                className={`flex cursor-pointer items-center gap-4 rounded-xl border bg-panel px-4 py-4 shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl ${
+                  isNext ? 'border-brand/70' : stuck ? 'border-amber/50' : 'border-line'
+                }`}
+              >
+                <span
+                  className={`shrink-0 font-display text-2xl font-bold ${isNext ? 'text-brand' : 'text-mute'}`}
+                >
+                  #{entry.position ?? i + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-display text-lg font-bold text-bone">{entry.client_name}</p>
+                  <p className="truncate text-xs text-mute">
+                    {entry.service}
+                    {entry.barber_id ? ` · with ${barberName(entry.barber_id)}` : ''}
+                  </p>
+                  {entry.status === 'waiting' ? (
+                    entry.eta_minutes != null ? (
+                      <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-brand/15 px-3 py-1 text-xs font-semibold text-bone">
+                        ⏱ Arriving in ~{entry.eta_minutes} min · by {arrivalTime(entry)}
+                      </span>
+                    ) : (
+                      <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-volt/15 px-3 py-1 text-xs font-semibold text-volt">
+                        📍 In the shop
+                      </span>
+                    )
+                  ) : (
+                    <p
+                      className={`mt-1 text-xs ${
+                        entry.status === 'in_chair' ? 'text-volt' : stuck ? 'text-amber' : 'text-mute'
+                      }`}
+                    >
+                      {statusText}
+                      {stuck && ' ⚠'}
+                    </p>
+                  )}
+                </div>
+                {isNext ? (
+                  // Label only — tapping it opens the same popup as the rest
+                  // of the card, where "In chair" / "Walked out" finishes it.
+                  <span className="shrink-0 rounded-md bg-brand px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white">
+                    Up Next
+                  </span>
+                ) : (
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-5 w-5 shrink-0 text-mute"
+                    aria-hidden="true"
+                  >
+                    <path d="m6 4 4 4-4 4" />
+                  </svg>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {popupEntry && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          onClick={() => setPopupEntry(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl border border-line bg-panel p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1 flex items-start justify-between gap-3">
+              <h2 className="font-display text-xl font-bold text-bone">{popupEntry.client_name}</h2>
+              <button
+                onClick={() => setPopupEntry(null)}
+                className="text-xl leading-none text-mute hover:text-bone"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            {popupEntry.barber_id && (
+              <p className="mb-5 text-sm text-mute">with {barberName(popupEntry.barber_id)}</p>
+            )}
+            <div className="flex flex-col gap-2">
+              {/* One tap finishes the job: "In chair" records the served
+                  visit (Clients section + loyalty points); "Walked out"
+                  removes them with no visit recorded. Either way the client
+                  leaves the live queue immediately, from any spot in line. */}
+              <button
+                onClick={() => {
+                  onComplete(popupEntry)
+                  onQueueChanged()
+                  setPopupEntry(null)
+                }}
+                className="rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brandBright"
+              >
+                In chair
+              </button>
+              <button
+                onClick={() => {
+                  onRemove(popupEntry.id)
+                  onQueueChanged()
+                  setPopupEntry(null)
+                }}
+                className="rounded-lg border border-crimson/50 px-4 py-2.5 text-sm font-medium text-crimsonBright transition-colors hover:bg-crimson/10"
+              >
+                Walked out
+              </button>
+            </div>
           </div>
         </div>
-        {walkInError && <p className="mt-3 text-sm text-crimsonBright">{walkInError}</p>}
-        <button
-          onClick={handleAddWalkIn}
-          disabled={walkInSaving || !walkInName.trim()}
-          className="mt-4 rounded bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
-        >
-          {walkInSaving ? 'Adding…' : 'Add to queue'}
-        </button>
-      </div>
-
-      <div className="overflow-x-auto rounded-md border border-line bg-panel">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead>
-            <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-mute">
-              <th className="px-5 py-3 font-medium">Client</th>
-              <th className="px-5 py-3 font-medium">Service</th>
-              <th className="px-5 py-3 font-medium">Barber</th>
-              <th className="px-5 py-3 font-medium">Status</th>
-              <th className="px-5 py-3 font-medium">Expected arrival</th>
-              <th className="px-5 py-3 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...inChair, ...called, ...waiting].length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-mute">
-                  No one in the queue.
-                </td>
-              </tr>
-            )}
-            {inChair.map((entry) => (
-              <tr key={entry.id} className="border-b border-line last:border-0">
-                <td className="px-5 py-3 text-bone">{entry.client_name}</td>
-                <td className="px-5 py-3 text-mute">{entry.service}</td>
-                <td className="px-5 py-3 text-mute">{barberName(entry.barber_id)}</td>
-                <td className="px-5 py-3 text-volt">In chair</td>
-                <td className="px-5 py-3 text-mute">—</td>
-                <td className="px-5 py-3 text-right">
-                  <button onClick={() => onComplete(entry.id)} className="text-xs text-brandBright hover:underline">
-                    Complete
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {called.map((entry) => {
-              const minutesAgo = entry.called_at ? (Date.now() - new Date(entry.called_at).getTime()) / 60_000 : 0
-              const stuck = minutesAgo >= CALLED_GRACE_MINUTES
-              return (
-                <tr key={entry.id} className={`border-b border-line last:border-0 ${stuck ? 'bg-amber/5' : ''}`}>
-                  <td className="px-5 py-3 text-bone">{entry.client_name}</td>
-                  <td className="px-5 py-3 text-mute">{entry.service}</td>
-                  <td className="px-5 py-3 text-mute">{barberName(entry.barber_id)}</td>
-                  <td className={`px-5 py-3 ${stuck ? 'text-amber' : 'text-mute'}`}>
-                    Called {Math.round(minutesAgo)}m ago
-                    {stuck && <span className="ml-1">⚠</span>}
-                  </td>
-                  <td className="px-5 py-3 text-mute">{expectedArrival(entry)}</td>
-                  <td className="px-5 py-3 text-right">
-                    <button
-                      onClick={() => onConfirmArrived(entry.id)}
-                      className="mr-3 text-xs text-brandBright hover:underline"
-                    >
-                      They arrived
-                    </button>
-                    <button onClick={() => onNoShow(entry.id)} className="text-xs text-crimsonBright hover:underline">
-                      No-show
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
-            {waiting.map((entry) => (
-              <tr key={entry.id} className="border-b border-line last:border-0">
-                <td className="px-5 py-3 text-bone">{entry.client_name}</td>
-                <td className="px-5 py-3 text-mute">{entry.service}</td>
-                <td className="px-5 py-3 text-mute">{barberName(entry.barber_id)}</td>
-                <td className="px-5 py-3 text-mute">Waiting</td>
-                <td className="px-5 py-3 text-mute">{expectedArrival(entry)}</td>
-                <td className="px-5 py-3 text-right">
-                  <button onClick={() => onCall(entry.id)} className="mr-3 text-xs text-brandBright hover:underline">
-                    Call
-                  </button>
-                  <button onClick={() => onRemove(entry.id)} className="text-xs text-crimsonBright hover:underline">
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      )}
     </div>
   )
 }
 
-function ClientsTab({ clients }: { clients: Client[] }) {
+function ClientsTab({ clients, onChange }: { clients: Client[]; onChange: () => void }) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  function startEdit(c: Client) {
+    setEditingId(c.id)
+    setEditName(c.name)
+    setEditPhone(c.phone ?? '')
+  }
+
+  async function saveEdit(id: string) {
+    if (!editName.trim()) return
+    setSaving(true)
+    await supabase
+      .from('clients')
+      .update({ name: editName.trim(), phone: editPhone.trim() || null })
+      .eq('id', id)
+    setSaving(false)
+    setEditingId(null)
+    onChange()
+  }
+
+  async function deleteClient(id: string, name: string) {
+    if (!window.confirm(`Delete ${name} from your clients? This can't be undone.`)) return
+    await supabase.from('clients').delete().eq('id', id)
+    onChange()
+  }
+
   return (
     <div>
       <h1 className="mb-6 font-display text-2xl font-semibold text-bone">Clients</h1>
-      <div className="overflow-x-auto rounded-md border border-line bg-panel">
-        <table className="w-full min-w-[640px] text-sm">
-          <thead>
-            <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-mute">
-              <th className="px-5 py-3 font-medium">Name</th>
-              <th className="px-5 py-3 font-medium">Phone</th>
-              <th className="px-5 py-3 font-medium">Visits</th>
-              <th className="px-5 py-3 font-medium">Tier</th>
-              <th className="px-5 py-3 font-medium">Last visit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-mute">
-                  No client records yet.
-                </td>
-              </tr>
-            )}
-            {clients.map((c) => (
-              <tr key={c.id} className="border-b border-line last:border-0">
-                <td className="px-5 py-3 text-bone">{c.name}</td>
-                <td className="px-5 py-3 text-mute">{c.phone ?? '—'}</td>
-                <td className="px-5 py-3 text-mute">{c.visit_count}</td>
-                <td className="px-5 py-3 text-mute">{c.tier}</td>
-                <td className="px-5 py-3 text-mute">{c.last_visit ? new Date(c.last_visit).toLocaleDateString() : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {clients.length === 0 ? (
+        <p className="rounded-xl border border-line bg-panel px-5 py-8 text-center text-mute shadow-lg">
+          No client records yet.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {clients.map((c) => (
+            <div key={c.id} className="rounded-xl border border-line bg-panel px-4 py-4 shadow-lg">
+              {editingId === c.id ? (
+                <div className="flex flex-col gap-2">
+                  <input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Name"
+                    className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+                  />
+                  <input
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="Phone (optional)"
+                    inputMode="tel"
+                    className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEdit(c.id)}
+                      disabled={saving || !editName.trim()}
+                      className="rounded bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
+                    >
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="rounded border border-line px-4 py-2 text-sm text-mute transition-colors hover:text-bone"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    <p className="min-w-0 flex-1 font-display text-lg font-bold text-bone">{c.name}</p>
+                    <button
+                      onClick={() => startEdit(c)}
+                      className="shrink-0 rounded border border-line px-3 py-1.5 text-xs font-medium text-mute transition-colors hover:text-bone"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => deleteClient(c.id, c.name)}
+                      className="shrink-0 rounded px-3 py-1.5 text-xs font-medium text-crimsonBright transition-colors hover:bg-crimson/10"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-mute">
+                    <span>📞 {c.phone ?? 'No phone'}</span>
+                    <span>
+                      ✂️ {c.visit_count} {c.visit_count === 1 ? 'visit' : 'visits'}
+                    </span>
+                    <span>★ {c.tier}</span>
+                    <span>🕐 Last: {c.last_visit ? new Date(c.last_visit).toLocaleDateString() : '—'}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -562,11 +801,22 @@ function BarbersTab({ shopId, barbers, onChange }: { shopId: string; barbers: Ba
           Add
         </button>
       </div>
-      <div className="divide-y divide-line rounded-md border border-line bg-panel">
-        {barbers.length === 0 && <p className="px-5 py-8 text-center text-mute">No barbers added yet.</p>}
+      <div className="flex flex-col gap-2">
+        {barbers.length === 0 && (
+          <p className="rounded-xl border border-line bg-panel px-5 py-8 text-center text-mute shadow-lg">
+            No barbers added yet.
+          </p>
+        )}
         {barbers.map((b) => (
-          <div key={b.id} className="flex items-center justify-between px-5 py-3">
-            <span className={b.active ? 'text-bone' : 'text-mute line-through'}>{b.name}</span>
+          <div
+            key={b.id}
+            className="flex items-center justify-between rounded-xl border border-line bg-panel px-4 py-3 shadow-lg"
+          >
+            <span
+              className={`font-display font-bold ${b.active ? 'text-bone' : 'text-mute line-through'}`}
+            >
+              {b.name}
+            </span>
             <div className="flex gap-3 text-xs">
               <button onClick={() => toggleActive(b)} className="text-brandBright hover:underline">
                 {b.active ? 'Deactivate' : 'Activate'}
@@ -583,19 +833,27 @@ function BarbersTab({ shopId, barbers, onChange }: { shopId: string; barbers: Ba
 }
 
 function ServicesTab({
-  shopId,
+  shop,
   services,
   onChange,
+  onShopUpdated,
 }: {
-  shopId: string
+  shop: Shop
   services: ShopService[]
   onChange: () => void
+  onShopUpdated: (shop: Shop) => void
 }) {
   const [name, setName] = useState('')
   const [price, setPrice] = useState('')
   const [duration, setDuration] = useState('')
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // "Walk-ins starting at" price shown on the browse card.
+  const [walkinPrice, setWalkinPrice] = useState(
+    shop.walkin_price_cents != null ? String(shop.walkin_price_cents / 100) : '',
+  )
+  const [walkinSaving, setWalkinSaving] = useState(false)
+  const [walkinMessage, setWalkinMessage] = useState<string | null>(null)
   // Per-row draft edits (price dollars + duration minutes), saved on demand.
   const [drafts, setDrafts] = useState<Record<string, { price: string; duration: string }>>({})
 
@@ -622,7 +880,7 @@ function ServicesTab({
     setAdding(true)
     setError(null)
     const { error: insertError } = await supabase.from('shop_services').insert({
-      shop_id: shopId,
+      shop_id: shop.id,
       name: name.trim(),
       price_cents: priceCents,
       duration_min: durationMin,
@@ -678,6 +936,39 @@ function ServicesTab({
     onChange()
   }
 
+  async function saveWalkinPrice() {
+    const trimmed = walkinPrice.trim()
+    if (trimmed !== '') {
+      const cents = Math.round(parseFloat(trimmed) * 100)
+      if (Number.isNaN(cents) || cents < 0) {
+        setWalkinMessage('Enter a price of $0 or more, or clear the field to hide it.')
+        return
+      }
+    }
+    setWalkinSaving(true)
+    setWalkinMessage(null)
+    const cents = trimmed === '' ? null : Math.round(parseFloat(trimmed) * 100)
+    const { data, error: updateError } = await supabase
+      .from('shops')
+      .update({ walkin_price_cents: cents })
+      .eq('id', shop.id)
+      .select()
+      .single()
+    setWalkinSaving(false)
+    if (updateError) {
+      setWalkinMessage(updateError.message)
+      return
+    }
+    if (data) {
+      onShopUpdated(data as Shop)
+      setWalkinMessage(
+        cents == null
+          ? 'Cleared — the walk-in badge is hidden from your shop card.'
+          : 'Saved — your shop card now shows "Walk-ins from" this price.',
+      )
+    }
+  }
+
   return (
     <div>
       <h1 className="mb-6 font-display text-2xl font-semibold text-bone">Services &amp; prices</h1>
@@ -685,6 +976,31 @@ function ServicesTab({
         This is your shop's live menu — it shows on your shop page and in every check-in picker. Changes take
         effect right away, no redeploy needed.
       </p>
+      <div className="mb-4 rounded-xl border border-line bg-panel p-4 shadow-lg">
+        <p className="font-display text-sm font-bold text-bone">Walk-ins starting at</p>
+        <p className="mb-2 text-xs text-mute">
+          Shows on your shop card in the directory. Leave blank to hide it.
+        </p>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-mute">$</span>
+          <input
+            value={walkinPrice}
+            onChange={(e) => setWalkinPrice(e.target.value)}
+            placeholder="25"
+            inputMode="decimal"
+            aria-label="Walk-in starting price"
+            className="w-28 rounded border border-line bg-panel2 px-2 py-2 text-sm text-bone"
+          />
+          <button
+            onClick={saveWalkinPrice}
+            disabled={walkinSaving}
+            className="rounded bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brandBright disabled:opacity-40"
+          >
+            {walkinSaving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        {walkinMessage && <p className="mt-2 text-xs text-mute">{walkinMessage}</p>}
+      </div>
       <div className="mb-4 grid gap-2 sm:grid-cols-[1fr_120px_140px_auto]">
         <input
           value={name}
@@ -715,9 +1031,11 @@ function ServicesTab({
         </button>
       </div>
       {error && <p className="mb-4 text-sm text-crimsonBright">{error}</p>}
-      <div className="divide-y divide-line rounded-md border border-line bg-panel">
+      <div className="flex flex-col gap-2">
         {services.length === 0 && (
-          <p className="px-5 py-8 text-center text-mute">No services yet — add your first one above.</p>
+          <p className="rounded-xl border border-line bg-panel px-5 py-8 text-center text-mute shadow-lg">
+            No services yet — add your first one above.
+          </p>
         )}
         {services.map((s) => {
           const d = draftFor(s)
@@ -725,8 +1043,15 @@ function ServicesTab({
             Math.round(parseFloat(d.price) * 100) !== s.price_cents ||
             (d.duration.trim() === '' ? null : parseInt(d.duration, 10)) !== s.duration_min
           return (
-            <div key={s.id} className="flex flex-wrap items-center gap-2 px-5 py-3">
-              <span className={`min-w-0 flex-1 text-sm ${s.active ? 'text-bone' : 'text-mute line-through'}`}>
+            <div
+              key={s.id}
+              className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-4 py-3 shadow-lg"
+            >
+              <span
+                className={`min-w-0 flex-1 font-display text-sm font-bold ${
+                  s.active ? 'text-bone' : 'text-mute line-through'
+                }`}
+              >
                 {s.name}
               </span>
               <span className="text-sm text-mute">$</span>

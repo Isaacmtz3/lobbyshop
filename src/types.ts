@@ -6,6 +6,8 @@ export interface Profile {
   full_name: string | null
   phone: string | null
   avatar_url: string | null
+  city: string | null
+  state: string | null
   created_at: string
 }
 
@@ -23,6 +25,9 @@ export interface Shop {
   is_active: boolean
   lat: number | null
   lng: number | null
+  // "Walk-ins starting at" price shown on the browse card (cents). NULL =
+  // not set: the card hides the badge.
+  walkin_price_cents: number | null
   // Per-day opening hours (jsonb). NULL = hours not set: the app treats the
   // shop as open and does not block check-in. See src/lib/hours.ts.
   hours: ShopHours | null
@@ -122,4 +127,77 @@ export interface Client {
   last_visit: string | null
   tier: string
   created_at: string
+}
+
+// --- Loyalty (v1, 2026-10-28 spec) ---------------------------------------
+// All loyalty rows are shop-scoped by shop_id. Points are per shop, never
+// pooled across shops, and never expire. A client only ever reads their own
+// ledger/redemptions; a shop only ever reads its own clients' rows (plus
+// the platform admin, the existing Command Center exception).
+
+export interface LoyaltySettings {
+  shop_id: string
+  enabled: boolean
+  /** Points awarded per completed/served visit. Owner stepper: 1-100. */
+  points_per_visit: number
+  welcome_bonus_enabled: boolean
+  /** Bonus points for a new client, credited on their first completed
+   * visit at this shop while the bonus toggle is on. Owner stepper: 1-100. */
+  welcome_bonus_points: number
+  created_at: string
+  updated_at: string
+}
+
+export interface LoyaltyReward {
+  id: string
+  shop_id: string
+  name: string
+  points_cost: number
+  active: boolean
+  sort_order: number
+  created_at: string
+}
+
+export type LoyaltyLedgerKind = 'visit' | 'welcome_bonus' | 'redeem'
+
+export interface LoyaltyLedgerEntry {
+  id: string
+  shop_id: string
+  client_profile_id: string
+  /** The queue entry this credit came from. Visit rows always carry it,
+   * which is what makes visit credits idempotent (one credit per queue
+   * entry). Welcome-bonus rows carry NULL here and are instead made
+   * one-per-client-per-shop by a partial unique index. */
+  queue_entry_id: string | null
+  reward_id: string | null
+  redemption_id: string | null
+  kind: LoyaltyLedgerKind
+  /** Positive for credits, negative for a confirmed redemption. */
+  points: number
+  note: string | null
+  created_at: string
+}
+
+export type LoyaltyRedemptionStatus = 'pending' | 'confirmed' | 'cancelled'
+
+export interface LoyaltyRedemption {
+  id: string
+  shop_id: string
+  client_profile_id: string
+  reward_id: string | null
+  /** Snapshot at request time, so a later reward edit/delete never
+   * rewrites what the client asked to redeem. */
+  reward_name: string
+  points_cost: number
+  status: LoyaltyRedemptionStatus
+  created_at: string
+  confirmed_at: string | null
+  cancelled_at: string | null
+}
+
+/** One distinct shop from the signed-in client's own completed visits,
+ * most recent first. Returned by the my_recent_shops RPC. */
+export interface RecentShop {
+  shop_id: string
+  last_completed_at: string
 }
