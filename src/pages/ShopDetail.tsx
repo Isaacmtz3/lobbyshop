@@ -47,6 +47,12 @@ export function ShopDetail() {
 
   const [service, setService] = useState(DEFAULT_SERVICES[0])
   const [barberId, setBarberId] = useState<string>('')
+  const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null)
+
+  function normalizeLink(raw: string): string {
+    const t = raw.trim()
+    return /^https?:\/\//i.test(t) ? t : `https://${t}`
+  }
   const [etaMinutes, setEtaMinutes] = useState<number>(ETA_OPTIONS[1])
   const [checkingIn, setCheckingIn] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -355,7 +361,7 @@ export function ShopDetail() {
               )}
             </div>
             <p className="mb-4 text-xs text-mute">
-              {loyaltySettings.points_per_visit} pts per completed visit · points never expire
+              {loyaltySettings.points_per_visit} pts per completed visit · points never expire · earned only when you check in here and get served
               {user ? '' : ' · sign in to earn points here'}
             </p>
             {loyaltyRewards.length === 0 ? (
@@ -493,13 +499,63 @@ export function ShopDetail() {
             </h2>
             <div className="flex flex-wrap gap-2">
               {barbers.map((b) => (
-                <span
+                <button
                   key={b.id}
-                  className="rounded-full border border-line bg-panel2 px-4 py-1.5 text-sm font-medium text-bone"
+                  onClick={() => setSelectedBarber(b)}
+                  className="rounded-full border border-line bg-panel2 px-4 py-1.5 text-sm font-medium text-bone transition-colors hover:border-brandBright"
                 >
-                  {b.name}
-                </span>
+                  {b.booking_link ? `🔗 ${b.name}` : b.name}
+                </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Barber booking-link sheet */}
+        {selectedBarber && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center">
+            <div
+              className="animate-sheet-fade absolute inset-0 bg-black/60"
+              onClick={() => setSelectedBarber(null)}
+            />
+            <div
+              className="animate-sheet-up relative w-full max-w-md rounded-t-3xl border-t-2 bg-panel p-6 pb-10"
+              style={{ borderTopColor: shop.accent_color }}
+            >
+              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-line" />
+              <h3 className="mb-1 text-center font-display text-xl font-black text-bone">
+                {selectedBarber.name}
+              </h3>
+              {selectedBarber.booking_link ? (
+                <>
+                  <p className="mb-4 text-center text-sm text-mute">
+                    Book directly with {selectedBarber.name} on their own page.
+                  </p>
+                  <a
+                    href={normalizeLink(selectedBarber.booking_link)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-xl py-3.5 text-center font-display text-base font-black text-white"
+                    style={{ backgroundColor: shop.accent_color }}
+                  >
+                    Book with {selectedBarber.name} 🔗
+                  </a>
+                  <p className="mt-3 text-center text-xs text-mute">
+                    Heads up: bookings made outside the app don't earn loyalty points.
+                  </p>
+                </>
+              ) : (
+                <p className="mb-4 text-center text-sm text-mute">
+                  No booking link for {selectedBarber.name} yet — check in below to get in
+                  their line and earn loyalty points.
+                </p>
+              )}
+              <button
+                onClick={() => setSelectedBarber(null)}
+                className="mt-4 w-full rounded-xl border border-line bg-panel2 py-2.5 text-sm font-medium text-bone"
+              >
+                Close
+              </button>
             </div>
           </div>
         )}

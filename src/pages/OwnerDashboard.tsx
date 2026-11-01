@@ -762,23 +762,47 @@ function ClientsTab({ clients, onChange }: { clients: Client[]; onChange: () => 
 
 function BarbersTab({ shopId, barbers, onChange }: { shopId: string; barbers: Barber[]; onChange: () => void }) {
   const [name, setName] = useState('')
+  const [link, setLink] = useState('')
   const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editLink, setEditLink] = useState('')
+  const [saving, setSaving] = useState(false)
 
   async function addBarber() {
     if (!name.trim()) return
     setAdding(true)
-    await supabase.from('barbers').insert({ shop_id: shopId, name: name.trim() })
+    await supabase.from('barbers').insert({
+      shop_id: shopId,
+      name: name.trim(),
+      booking_link: link.trim() || null,
+    })
     setName('')
+    setLink('')
     setAdding(false)
     onChange()
   }
 
-  async function toggleActive(barber: Barber) {
-    await supabase.from('barbers').update({ active: !barber.active }).eq('id', barber.id)
+  function startEdit(barber: Barber) {
+    setEditingId(barber.id)
+    setEditName(barber.name)
+    setEditLink(barber.booking_link ?? '')
+  }
+
+  async function saveEdit() {
+    if (!editingId || !editName.trim()) return
+    setSaving(true)
+    await supabase
+      .from('barbers')
+      .update({ name: editName.trim(), booking_link: editLink.trim() || null })
+      .eq('id', editingId)
+    setEditingId(null)
+    setSaving(false)
     onChange()
   }
 
   async function removeBarber(id: string) {
+    if (!window.confirm('Remove this barber?')) return
     await supabase.from('barbers').delete().eq('id', id)
     onChange()
   }
@@ -786,7 +810,7 @@ function BarbersTab({ shopId, barbers, onChange }: { shopId: string; barbers: Ba
   return (
     <div>
       <h1 className="mb-6 font-display text-2xl font-semibold text-bone">Barbers</h1>
-      <div className="mb-4 flex gap-2">
+      <div className="mb-2 flex gap-2">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -801,33 +825,68 @@ function BarbersTab({ shopId, barbers, onChange }: { shopId: string; barbers: Ba
           Add
         </button>
       </div>
+      <input
+        value={link}
+        onChange={(e) => setLink(e.target.value)}
+        placeholder="Booking link (optional) — e.g. https://booksy.com/…"
+        className="mb-4 w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+      />
       <div className="flex flex-col gap-2">
         {barbers.length === 0 && (
           <p className="rounded-xl border border-line bg-panel px-5 py-8 text-center text-mute shadow-lg">
             No barbers added yet.
           </p>
         )}
-        {barbers.map((b) => (
-          <div
-            key={b.id}
-            className="flex items-center justify-between rounded-xl border border-line bg-panel px-4 py-3 shadow-lg"
-          >
-            <span
-              className={`font-display font-bold ${b.active ? 'text-bone' : 'text-mute line-through'}`}
-            >
-              {b.name}
-            </span>
-            <div className="flex gap-3 text-xs">
-              <button onClick={() => toggleActive(b)} className="text-brandBright hover:underline">
-                {b.active ? 'Deactivate' : 'Activate'}
-              </button>
-              <button onClick={() => removeBarber(b.id)} className="text-crimsonBright hover:underline">
-                Remove
-              </button>
+        {barbers.map((b) =>
+          editingId === b.id ? (
+            <div key={b.id} className="rounded-xl border border-line bg-panel px-4 py-3 shadow-lg">
+              <input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="mb-2 w-full rounded border border-line bg-panel2 px-3 py-2 text-sm font-bold text-bone"
+              />
+              <input
+                value={editLink}
+                onChange={(e) => setEditLink(e.target.value)}
+                placeholder="Booking link (optional)"
+                className="mb-3 w-full rounded border border-line bg-panel2 px-3 py-2 text-sm text-bone"
+              />
+              <div className="flex gap-3 text-xs">
+                <button onClick={saveEdit} disabled={saving} className="font-semibold text-brandBright hover:underline disabled:opacity-40">
+                  Save
+                </button>
+                <button onClick={() => setEditingId(null)} className="text-mute hover:underline">
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          ) : (
+            <div
+              key={b.id}
+              className="flex items-center justify-between gap-3 rounded-xl border border-line bg-panel px-4 py-3 shadow-lg"
+            >
+              <div className="min-w-0">
+                <span className="font-display font-bold text-bone">{b.name}</span>
+                {b.booking_link && (
+                  <p className="truncate text-xs text-brandBright">🔗 {b.booking_link}</p>
+                )}
+              </div>
+              <div className="flex shrink-0 gap-3 text-xs">
+                <button onClick={() => startEdit(b)} className="text-brandBright hover:underline">
+                  Edit
+                </button>
+                <button onClick={() => removeBarber(b.id)} className="text-crimsonBright hover:underline">
+                  Remove
+                </button>
+              </div>
+            </div>
+          )
+        )}
       </div>
+      <p className="mt-4 text-xs text-mute">
+        The booking link shows on your public shop page — clients tap a barber's name to open it.
+        Loyalty points are only earned for visits checked in and served through the app.
+      </p>
     </div>
   )
 }

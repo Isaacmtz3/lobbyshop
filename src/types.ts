@@ -67,6 +67,7 @@ export interface Barber {
   shop_id: string
   name: string
   active: boolean
+  booking_link: string | null
   created_at: string
 }
 
