@@ -2,6 +2,7 @@ import { Link, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { NavBar } from './components/NavBar'
 import { useAuth } from './contexts/AuthContext'
 import { consumePendingNext } from './lib/pendingNext'
+import { ClientDashboard } from './pages/ClientDashboard'
 import { CommandCenter } from './pages/CommandCenter'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { KioskCheckIn } from './pages/KioskCheckIn'
@@ -43,7 +44,9 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
 
 /** "/" is the marketing landing page for new visitors, but a returning
  * signed-in user should never see a signup funnel again — send them
- * straight to the part of the app their role actually uses. */
+ * straight to the part of the app their role actually uses. Clients land
+ * on their dashboard (favorites, recent shops, loyalty); browse stays a
+ * tab/link from there, not the landing page. */
 function RootRoute() {
   const { user, profile, loading, profileLoading } = useAuth()
   if (loading || (user && profileLoading)) {
@@ -56,9 +59,22 @@ function RootRoute() {
     if (pending) return <Navigate to={pending} replace />
     if (profile?.role === 'shop_owner') return <Navigate to="/owner" replace />
     if (profile?.role === 'admin') return <Navigate to="/command-center" replace />
-    return <Navigate to="/browse" replace />
+    return <Navigate to="/dashboard" replace />
   }
   return <Landing />
+}
+
+/** /dashboard is the client home. Owners/admins who land here directly
+ * are sent to their own homes instead of seeing a client dashboard. */
+function ClientDashboardRoute() {
+  const { user, profile, loading, profileLoading } = useAuth()
+  if (loading || (user && profileLoading)) {
+    return <div className="mx-auto max-w-3xl px-5 py-10 text-mute">Loading…</div>
+  }
+  if (!user) return <Navigate to="/login" replace />
+  if (profile?.role === 'shop_owner') return <Navigate to="/owner" replace />
+  if (profile?.role === 'admin') return <Navigate to="/command-center" replace />
+  return <ClientDashboard />
 }
 
 function AppLayout() {
@@ -93,6 +109,7 @@ function App() {
       <Route path="/display/:slug" element={<ShopDisplay />} />
 
       <Route element={<AppLayout />}>
+        <Route path="/dashboard" element={<ClientDashboardRoute />} />
         <Route path="/browse" element={<ShopDirectory />} />
         <Route path="/shop/:slug" element={<ShopDetail />} />
         <Route path="/login" element={<Login />} />

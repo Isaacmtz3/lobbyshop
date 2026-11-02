@@ -16,6 +16,8 @@ interface AuthContextValue {
     phone: string,
     role: ProfileRole,
     emailRedirectTo?: string,
+    city?: string,
+    state?: string,
   ) => Promise<{ needsEmailConfirmation: boolean }>
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
@@ -66,12 +68,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     phone: string,
     role: ProfileRole,
     emailRedirectTo?: string,
+    city?: string,
+    state?: string,
   ) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName, phone: phone || null, role },
+        data: {
+          full_name: fullName,
+          phone: phone || null,
+          role,
+          city: city?.trim() || null,
+          state: state?.trim() || null,
+        },
         ...(emailRedirectTo ? { emailRedirectTo } : {}),
       },
     })

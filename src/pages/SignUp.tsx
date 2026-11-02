@@ -3,6 +3,26 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { isSafeNextPath, savePendingNext } from '../lib/pendingNext'
 import { useAuth } from '../contexts/AuthContext'
 
+const US_STATES = [
+  { abbr: 'AL', name: 'Alabama' }, { abbr: 'AK', name: 'Alaska' }, { abbr: 'AZ', name: 'Arizona' },
+  { abbr: 'AR', name: 'Arkansas' }, { abbr: 'CA', name: 'California' }, { abbr: 'CO', name: 'Colorado' },
+  { abbr: 'CT', name: 'Connecticut' }, { abbr: 'DE', name: 'Delaware' }, { abbr: 'DC', name: 'Dist. of Columbia' },
+  { abbr: 'FL', name: 'Florida' }, { abbr: 'GA', name: 'Georgia' }, { abbr: 'HI', name: 'Hawaii' },
+  { abbr: 'ID', name: 'Idaho' }, { abbr: 'IL', name: 'Illinois' }, { abbr: 'IN', name: 'Indiana' },
+  { abbr: 'IA', name: 'Iowa' }, { abbr: 'KS', name: 'Kansas' }, { abbr: 'KY', name: 'Kentucky' },
+  { abbr: 'LA', name: 'Louisiana' }, { abbr: 'ME', name: 'Maine' }, { abbr: 'MD', name: 'Maryland' },
+  { abbr: 'MA', name: 'Massachusetts' }, { abbr: 'MI', name: 'Michigan' }, { abbr: 'MN', name: 'Minnesota' },
+  { abbr: 'MS', name: 'Mississippi' }, { abbr: 'MO', name: 'Missouri' }, { abbr: 'MT', name: 'Montana' },
+  { abbr: 'NE', name: 'Nebraska' }, { abbr: 'NV', name: 'Nevada' }, { abbr: 'NH', name: 'New Hampshire' },
+  { abbr: 'NJ', name: 'New Jersey' }, { abbr: 'NM', name: 'New Mexico' }, { abbr: 'NY', name: 'New York' },
+  { abbr: 'NC', name: 'North Carolina' }, { abbr: 'ND', name: 'North Dakota' }, { abbr: 'OH', name: 'Ohio' },
+  { abbr: 'OK', name: 'Oklahoma' }, { abbr: 'OR', name: 'Oregon' }, { abbr: 'PA', name: 'Pennsylvania' },
+  { abbr: 'RI', name: 'Rhode Island' }, { abbr: 'SC', name: 'South Carolina' }, { abbr: 'SD', name: 'South Dakota' },
+  { abbr: 'TN', name: 'Tennessee' }, { abbr: 'TX', name: 'Texas' }, { abbr: 'UT', name: 'Utah' },
+  { abbr: 'VT', name: 'Vermont' }, { abbr: 'VA', name: 'Virginia' }, { abbr: 'WA', name: 'Washington' },
+  { abbr: 'WV', name: 'West Virginia' }, { abbr: 'WI', name: 'Wisconsin' }, { abbr: 'WY', name: 'Wyoming' },
+]
+
 export function SignUp() {
   const { signUp, resendConfirmation } = useAuth()
   const navigate = useNavigate()
@@ -12,6 +32,8 @@ export function SignUp() {
   const emailRedirectTo = safeNext ? `${window.location.origin}${safeNext}` : undefined
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
+  const [city, setCity] = useState('')
+  const [state, setState] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [agreedToTerms, setAgreedToTerms] = useState(false)
@@ -49,6 +71,8 @@ export function SignUp() {
         phone,
         'client',
         emailRedirectTo,
+        city,
+        state,
       )
       if (needsEmailConfirmation) {
         setConfirmSent(true)
@@ -113,6 +137,36 @@ export function SignUp() {
             className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone placeholder:text-mute/60"
           />
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">City</label>
+            <input
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              placeholder="Corpus Christi"
+              autoComplete="address-level2"
+              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone placeholder:text-mute/60"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">State</label>
+            <select
+              value={state}
+              onChange={(e) => setState(e.target.value)}
+              className="w-full rounded border border-line bg-panel2 px-3 py-2.5 text-sm text-bone"
+            >
+              <option value="">Select…</option>
+              {US_STATES.map((s) => (
+                <option key={s.abbr} value={s.abbr}>
+                  {s.abbr} — {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <p className="-mt-2 text-xs text-mute">
+          We use your city to show you barbershops near you first.
+        </p>
         <div>
           <label className="mb-1.5 block text-xs uppercase tracking-wider text-mute">Email</label>
           <input
