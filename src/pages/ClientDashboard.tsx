@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
   balanceFor,
@@ -49,8 +49,19 @@ function StarButton({
   )
 }
 
+// Horizontal in-place carousel: cards scroll sideways inside the section and
+// fade off the right edge instead of stacking into a long vertical list.
+const carouselCls =
+  'flex gap-4 overflow-x-auto pb-4 snap-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+const carouselFade = {
+  maskImage: 'linear-gradient(to right, black 88%, transparent 100%)',
+  WebkitMaskImage: 'linear-gradient(to right, black 88%, transparent 100%)',
+} as const
+
 export function ClientDashboard() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
+  const navigate = useNavigate()
+  const [searchTerm, setSearchTerm] = useState('')
   const [shops, setShops] = useState<Shop[]>([])
   const [favorites, setFavorites] = useState<string[]>([])
   const [recent, setRecent] = useState<{ shop_id: string; last_completed_at: string }[]>([])
@@ -163,21 +174,45 @@ export function ClientDashboard() {
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-10">
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-brandBright">My dashboard</p>
-          <h1 className="font-display text-3xl font-bold text-bone">Your shops &amp; points</h1>
-          <p className="mt-2 max-w-lg text-sm text-mute">
-            Your favorites, the shops you have actually visited, and the loyalty points you have
-            earned at each one. Points stay at the shop where you earned them — they never expire.
-          </p>
-        </div>
-        <Link
-          to="/browse"
-          className="rounded bg-brand px-4 py-2.5 text-sm font-medium text-white hover:bg-brandBright"
+      <div className="mb-8">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-brandBright">My dashboard</p>
+        <h1 className="font-display text-3xl font-bold text-bone">Your shops &amp; points</h1>
+        <p className="mt-2 max-w-lg text-sm text-mute">
+          Browse local shops, check the wait, and keep your favorites in one place.
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            navigate(searchTerm.trim() ? `/browse?q=${encodeURIComponent(searchTerm.trim())}` : '/browse')
+          }}
+          className="mt-5"
         >
-          Browse shops
-        </Link>
+          <div className="relative">
+            <svg
+              className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-mute"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+              aria-hidden
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path strokeLinecap="round" d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={profile?.city ? `Search shops in ${profile.city}` : 'Search shops…'}
+              className="w-full rounded-xl border border-line bg-panel py-3.5 pl-12 pr-4 text-sm text-bone placeholder:text-mute"
+            />
+          </div>
+          <button
+            type="submit"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-3.5 font-display text-base font-bold text-white transition-colors hover:bg-brandBright"
+          >
+            Browse shops <span aria-hidden>→</span>
+          </button>
+        </form>
       </div>
 
       {error && <p className="mb-6 rounded-md border border-line bg-panel p-4 text-sm text-crimsonBright">{error}</p>}
@@ -191,9 +226,9 @@ export function ClientDashboard() {
             No favorites yet. Tap the ☆ on any shop card or shop page to pin it here.
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          <div className={carouselCls} style={carouselFade}>
             {favoriteShops.map((shop) => (
-              <div key={shop.id} className="relative rounded-md border border-line bg-panel p-4">
+              <div key={shop.id} className="relative w-44 shrink-0 snap-start rounded-xl border border-line bg-panel p-4">
                 <div className="absolute right-3 top-3">
                   <StarButton
                     isFavorite
@@ -201,15 +236,15 @@ export function ClientDashboard() {
                     label={`Remove ${shop.name} from favorites`}
                   />
                 </div>
-                <Link to={`/shop/${shop.slug}`} className="block pr-10">
-                  <div className="mb-3 flex h-16 w-16 items-center justify-center overflow-hidden rounded-md bg-panel2">
+                <Link to={`/shop/${shop.slug}`} className="block">
+                  <div className="mb-3 flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg bg-panel2">
                     {shop.logo_url ? (
                       <img src={shop.logo_url} alt={shop.name} className="h-full w-full object-cover" />
                     ) : (
                       <span className="font-display text-xl font-bold text-mute">{shop.name.slice(0, 1)}</span>
                     )}
                   </div>
-                  <h3 className="font-display font-semibold text-bone">{shop.name}</h3>
+                  <h3 className="font-display font-bold text-bone">{shop.name}</h3>
                   <p className="text-xs text-mute">{shop.city || ' '}</p>
                 </Link>
               </div>
@@ -227,11 +262,11 @@ export function ClientDashboard() {
             it will show up here.
           </p>
         ) : (
-          <div className="divide-y divide-line rounded-md border border-line bg-panel">
+          <div className={carouselCls} style={carouselFade}>
             {recentShops.map(({ shop, last }) => (
-              <div key={shop.id} className="flex items-center justify-between gap-3 px-5 py-3">
+              <div key={shop.id} className="flex w-72 shrink-0 snap-start items-center justify-between gap-3 rounded-xl border border-line bg-panel px-4 py-3">
                 <Link to={`/shop/${shop.slug}`} className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-bone">{shop.name}</p>
+                  <p className="truncate font-bold text-bone">{shop.name}</p>
                   <p className="text-xs text-mute">
                     Last visit {new Date(last).toLocaleDateString()}
                     {shop.city ? ` · ${shop.city}` : ''}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { distanceMiles, formatDistance } from '../lib/geo'
 import { DAY_KEYS, formatTime, parseShopHours } from '../lib/hours'
@@ -25,6 +25,7 @@ function todayHoursLine(shop: Shop): string {
 
 export function ShopDirectory() {
   const { user, profile } = useAuth()
+  const [searchParams] = useSearchParams()
   const [shops, setShops] = useState<Shop[]>([])
   const [stats, setStats] = useState<Record<string, ShopQueueStats>>({})
   const [favorites, setFavorites] = useState<string[]>([])
@@ -38,6 +39,16 @@ export function ShopDirectory() {
   const [locationState, setLocationState] = useState<LocationState>('idle')
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
   const userCityApplied = useRef(false)
+
+  // A search handed off from the dashboard (?q=…) takes precedence over the
+  // profile-city default and re-applies if the param changes.
+  useEffect(() => {
+    const q = searchParams.get('q')
+    if (q !== null) {
+      userCityApplied.current = true
+      setQuery(q)
+    }
+  }, [searchParams])
 
   // Directory aggregate: counts only, no client data. The per-shop board
   // and stats reads elsewhere are scoped to one shop each.
